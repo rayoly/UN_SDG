@@ -1,8 +1,4 @@
-/*******************************************************************
-* Raymond Olympio, 2019
-* Example of the calculation of UN SDG 6.1.1 for Namibia
-*******************************************************************/
-
+//Raymond Olympio, 2019
 /*******************************************************************
 Configuration
 *******************************************************************/
@@ -12,6 +8,7 @@ var GoogleDriveDir = 'UN_SDG_6.1.1'; //Folder in Google Drive
 var EXPORT_TO_DRIVE = false;//set to true to export to Google Drive
 var EXPORT_TO_ASSET = false;//set to true to export to GEE Assets
 var AreaScale = 30; //A nominal scale in meters of the projection to work in.
+var ShapeFileAsset = 'users/rayoly/ADMIN_Regional_Boundaries_2014'
 //Corner definition of the region of interest (here: Namibia)
 var Xmin = 10;
 var Xmax = 26;
@@ -23,9 +20,11 @@ var DeltaY = Ymax-Ymin;//1
 var ZoomLvl = 5;
 //Country code for region of interest, here: Namibia->”WA”
 var CountryCode = 'WA';
+var YearStart = 2011;
+var YearEnd = 2015;
 var DateStart = '2015-01-01';
 var DateEnd = '2015-12-31';
-
+var avg_area = 0;
 /*******************************************************************
 Local variables
 *******************************************************************/
@@ -39,8 +38,7 @@ Local functions
 *******************************************************************/
 // Process data: count the area of pixel with value >= 3.0
 var waterCount = function(image, geometry){
-  //var water03 = image.gte(3.0);
-  var water03 = image.gte(2.90);
+  var water03 = image.gte(3.0);
   var area = ee.Image.pixelArea();
   var waterArea = water03.multiply(area).rename('waterArea');
 
@@ -83,12 +81,29 @@ var ExportData = function(ImgWaterRegion, CountryCode, SelRegion){
 
 //------------------------------------------------- Retrieve Country Border
 if (!USE_RECT_PATCHES) {
-  var Countrydataset = ee.FeatureCollection('USDOS/LSIB/2013');
+  var Countrydataset
+  //Use dataset USDOS LSIB 2017
+  Countrydataset = ee.FeatureCollection('USDOS/LSIB/2017');
   //Select a specific country
-  Countrydataset = Countrydataset.filterMetadata('cc','equals',CountryCode)
-  
-  //Calculate properties of the area
+  Countrydataset = Countrydataset.filterMetadata('COUNTRY_CO','equals',CountryCode)
+  //retrieve country border as polygon
   Polygon = Countrydataset.first().geometry();
+  Map.addLayer(Polygon,{color:'ffbb75', opacity: 0.5},'Selected Region - USDOS')
+    
+  if(ShapeFileAsset){//Use the shape file asset
+    var USDOS_Polygon = Polygon
+    Countrydataset = ee.Collection.loadTable(ShapeFileAsset);
+    //merge all features
+    Countrydataset = Countrydataset.union();
+    //
+    Polygon = Countrydataset.first().geometry();
+    Map.addLayer(Polygon,{color:'75f8ff', opacity: 0.5}, 'Selected Region - Shapefile')
+    
+    var diffPolygon = Polygon.difference(USDOS_Polygon);
+    Map.addLayer(diffPolygon,{color:'ff0000'},'Selected Region - Difference')
+  }
+
+  //Calculate properties of the area
   var area = Polygon.area().divide(1000 * 1000);
   var perimeter = Polygon.perimeter().divide(1000);
   var centroid = Polygon.centroid();
@@ -99,59 +114,62 @@ if (!USE_RECT_PATCHES) {
   print('Centroid:',centroid, 'm');
   print('Bounds:',bounds, 'm');
 
-  //DisplayvisParams
-  var visParams = {
-    palette: ['ff00ff','ff00ff'],
-    opacity: 0.5
-  };
-  Map.addLayer(Polygon,visParams,'CountryBorder and Selected Region')
+  
 }
 //Calculate center of the area
 CenterX = 0.5*(Xmin+Xmax)
 CenterY = 0.5*(Ymin+Ymax)
 
 //--------------------------------------------------------
-var dataset = ee.ImageCollection('JRC/GSW1_0/YearlyHistory')
-                  .filter(ee.Filter.date(DateStart, DateEnd));
-var waterClass = dataset.select('waterClass');
-var waterClassVis = {
-  min: 0.0,
-  max: 3.0,
-  palette: ['cccccc', 'ffffff', '99d9ea', '0000ff'],
-};
-Map.setCenter(CenterX, CenterY, ZoomLvl);
-//Map.addLayer(waterClass, waterClassVis, 'Water Class');
+for(var Year=YearStart;Year<=YearEnd;Year+=1){
+  DateStart = Year + '-01-01';
+  DateEnd = Year + '-12-31';
 
-var FullRectRegion = ee.Geometry.Rectangle([Xmin, Ymin, Xmax, Ymax]);
-//Map.addLayer(FullRectRegion, {palette: ['CCCCCC']}, 'RectRegion');
-
-//get 
-var ImgWaterRegion = ee.Image(dataset.first());
-      
-//we can either extract patches or use directly the country borders!
-if (USE_RECT_PATCHES) {
-  for (x = Xmin; x < Xmax; x+=DeltaX) {
-    for (y = Ymin; y < Ymax; y+=DeltaY) {
-      print('Region: x=' + x + ', y=' + y + ', step = [' + DeltaX + ',' + DeltaY + ']')
-      SelRegion = ee.Geometry.Rectangle([x, y, x+DeltaX, y+DeltaY]);
-      
-      //clip everything outside the SelRegion
-      ImgRegion = ImgWaterRegion.clip(SelRegion);
-      
-      //Calculate the water area
-      var area = waterCount(ImgWaterRegion, SelRegion);
-      ExportData(ImgWaterRegion, CountryCode, SelRegion);
-      print('Water Area = ',area,'km^2');
+  var dataset = ee.ImageCollection('JRC/GSW1_0/YearlyHistory')
+                    .filter(ee.Filter.date(DateStart, DateEnd));
+  var waterClass = dataset.select('waterClass');
+  var waterClassVis = {
+    min: 0.0,
+    max: 3.0,
+    palette: ['cccccc', 'ffffff', '99d9ea', '0000ff'],
+  };
+  Map.setCenter(CenterX, CenterY, ZoomLvl);
+  //Map.addLayer(waterClass, waterClassVis, 'Water Class');
+  
+  var FullRectRegion = ee.Geometry.Rectangle([Xmin, Ymin, Xmax, Ymax]);
+  //Map.addLayer(FullRectRegion, {palette: ['CCCCCC']}, 'RectRegion');
+  
+  //get 
+  var ImgWaterRegion = ee.Image(dataset.first());
+        
+  //we can either extract patches or use directly the country borders!
+  if (USE_RECT_PATCHES) {
+    for (x = Xmin; x < Xmax; x+=DeltaX) {
+      for (y = Ymin; y < Ymax; y+=DeltaY) {
+        print('Region: x=' + x + ', y=' + y + ', step = [' + DeltaX + ',' + DeltaY + ']')
+        SelRegion = ee.Geometry.Rectangle([x, y, x+DeltaX, y+DeltaY]);
+        
+        //clip everything outside the SelRegion
+        ImgRegion = ImgWaterRegion.clip(SelRegion);
+        
+        //Calculate the water area
+        var area = waterCount(ImgWaterRegion, SelRegion);
+        ExportData(ImgWaterRegion, CountryCode, SelRegion);
+        print('Water Area = ',area,'km^2');
+      }
     }
+  }else{
+    //clip everything outside the Polygon
+    ImgRegion = ImgWaterRegion.clip(Polygon);  
+    Map.addLayer(ImgRegion,{palette:'0000ff'},'Clipped Water for ' + CountryCode + ' in ' + Year);
+    //Calculate the water area
+    var area = waterCount(ImgWaterRegion, Polygon);
+    //Export data
+    ExportData(ImgWaterRegion, CountryCode, Polygon);
+    //print 
+    avg_area = avg_area + area/1e6;
+    print('Year ' + Year + ', Water Area = ' + (area/1e6) + 'km^2');
   }
-}else{
-  //clip everything outside the Polygon
-  ImgRegion = ImgWaterRegion.clip(Polygon);  
-  Map.addLayer(ImgRegion,{palette:'0000ff'},'Clipped Water');
-  //Calculate the water area
-  var area = waterCount(ImgWaterRegion, Polygon);
-  //Export data
-  ExportData(ImgWaterRegion, CountryCode, Polygon);
-  //print result
-  print('Water Area = ',area/1e6,'km^2');
 }
+
+print('Average Area from ' +YearStart + ' to ' + YearEnd + ' is ' + avg_area/(YearEnd-YearStart+1) + 'km^2');
