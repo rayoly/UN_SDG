@@ -107,36 +107,43 @@ var ExportData = function(ImgWaterRegion, Description, SelRegion){
   }
 }
 
+var GetRegion = function(ShapeFileAsset, RegionID) {
+  //------------------------------------------------- Retrieve Country Border
+  //Use dataset USDOS LSIB 2017
+  Countrydataset = ee.FeatureCollection('USDOS/LSIB/2017');
+  //Select a specific country
+  Countrydataset = Countrydataset.filterMetadata('COUNTRY_CO','equals',CountryCode)
+  //retrieve country border as polygon
+  var poly = Countrydataset.first().geometry();
+  
+  if(ShapeFileAsset){//Use the shape file asset
+    var USDOS_Polygon = poly; //save USDOS Polygon
+    Countrydataset = ee.Collection.loadTable(ShapeFileAsset);
+    //merge all features
+    if(RegionID>0){
+      Countrydataset = ee.Feature(Countrydataset.toList(1,RegionID-1).get(0));
+      print(Countrydataset);
+      poly = Countrydataset.geometry();
+    }else{
+      Countrydataset = Countrydataset.union().first();
+      poly = Countrydataset.geometry();
+    }
+    //
+    Map.addLayer(poly,{color:'ffbb75', opacity: 0.5},'Selected Region - USDOS',false);
+    Map.addLayer(poly,{color:'75f8ff', opacity: 0.5}, 'Selected Region - Shapefile');
+    var diffPolygon = poly.difference(USDOS_Polygon);
+    Map.addLayer(diffPolygon,{color:'ff0000'},'Selected Region - Difference');
+  }else{
+    Map.addLayer(poly,{color:'ffbb75', opacity: 0.5},'Selected Region - USDOS',true);
+  }
+  return poly;
+}
 
 /*********************************************************************
  * Main routine
  *********************************************************************/
 //------------------------------------------------- Retrieve Country Border
-//Use dataset USDOS LSIB 2017
-Countrydataset = ee.FeatureCollection('USDOS/LSIB/2017');
-//Select a specific country
-Countrydataset = Countrydataset.filterMetadata('COUNTRY_CO','equals',CountryCode)
-//retrieve country border as polygon
-Polygon = Countrydataset.first().geometry();
-Map.addLayer(Polygon,{color:'ffbb75', opacity: 0.5},'Selected Region - USDOS')
-  
-if(ShapeFileAsset){//Use the shape file asset
-  var USDOS_Polygon = Polygon; //save USDOS Polygon
-  Countrydataset = ee.Collection.loadTable(ShapeFileAsset);
-  //merge all features
-  if(RegionID>0){
-    Countrydataset = ee.Feature(Countrydataset.toList(1,RegionID-1).get(0));
-    print(Countrydataset);
-    Polygon = Countrydataset.geometry();
-  }else{
-    Countrydataset = Countrydataset.union().first();
-    Polygon = Countrydataset.geometry();
-  }
-  //
-  Map.addLayer(Polygon,{color:'75f8ff', opacity: 0.5}, 'Selected Region - Shapefile')
-  var diffPolygon = Polygon.difference(USDOS_Polygon);
-  Map.addLayer(diffPolygon,{color:'ff0000'},'Selected Region - Difference')
-}
+Polygon = GetRegion(ShapeFileAsset, RegionID);
 
 //Calculate properties of the area
 var area = Polygon.area().divide(1000 * 1000);
@@ -182,21 +189,20 @@ for(var Year=YearStart;Year<=YearEnd;Year+=1){
   ImgWaterRegion = ImgWaterRegion.select(['waterClass'],
      ['water_'+ WATER_TYPE + '_'+Year]);
   
-  //
-  //we can either extract patches or use directly the country borders!
-  //
   //clip everything outside the Polygon
   ImgRegion = ImgWaterRegion.clip(Polygon);
+  ImgRegion.getInfo();
+  //Calculate the water area
+  var area = waterCount(ImgRegion, Polygon);
+  //Export data
+  ExportData(ImgRegion, result_name, Polygon);
   if(SHOW_WATER_LAYER){ //it is resource intensive to plot all layers...
     //Add layer
-    Map.addLayer(ImgRegion,{palette:'0000ff'},'Clipped Water for ' + result_name);
+    Map.addLayer(ImgRegion.eq(3.0),{palette:'0000ff'},
+        'Clipped Water for ' + result_name,
+        false);
   }
-  //Calculate the water area
-  var area = waterCount(ImgWaterRegion, Polygon);
-  //Export data
-  ExportData(ImgWaterRegion, result_name, Polygon);
   //print
   avg_area = avg_area + area/1e6;
   print('Year ' + Year + ', Water Area = ' + (area/1e6).toFixed(4) + ' km^2');
 }
-
