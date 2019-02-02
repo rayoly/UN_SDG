@@ -1,6 +1,6 @@
-# UN_SDG611
+# UN_SDG661
 
-This script is an example on how one can calculate the UN SDG 6.1.1 within GEE.
+This script is an example on how one can calculate the UN SDG 6.6.1 within GEE.
 
 ### Getting Started
 These instructions will get you a copy of the project up and running on your local machine for development and testing purposes. See deployment for notes on how to deploy the project on a live system.
