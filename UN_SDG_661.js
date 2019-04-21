@@ -515,8 +515,8 @@ var CalcWaterArea = function(){
     //5-year average
     if(monthRange.length==1){
       var gamma2, gamma3;
-      var beta3 = Average5(data.area3, 2001-1984);
-      var beta2 = Average5(data.area2, 2001-1984);      
+      var beta3 = AVG.Average5(data.area3, 2001-1984);
+      var beta2 = AVG.Average5(data.area2, 2001-1984);      
       for(i=0;i<data.area3.length;i++){
           gamma2 = AVG.Average5(data.area2,i);
           gamma3 = AVG.Average5(data.area3,i);
