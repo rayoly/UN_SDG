@@ -22,41 +22,16 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 */
 
-/************************************************************************************
- * Configure GUI
- ************************************************************************************/
-var TEXTCOLOR = '#44546A';//Text color
-var BACKCOLOR0 = '#EEEEEE';//Background color
-var BACKCOLOR = '#F9F9F9';//Background color
-var PANEL_STYLE = {width: '400px', color:TEXTCOLOR, backgroundColor: BACKCOLOR0};
-var CNTRL_PANEL_STYLE = {width: '400px', color:TEXTCOLOR, backgroundColor: BACKCOLOR};
+var AVG = require('users/rayoly/SDG_APP:fnc/Average_fnc.js');
+var AdministrativeRegions = require('users/rayoly/SDG_APP:fnc/AdministrativeRegions_fnc.js');
+var GUIPREF = require('users/rayoly/SDG_APP:fnc/GUI_Prefs.js');
 
-var TITLE_STYLE = {position: 'top-right', fontWeight: 'normal', fontSize: '28px', color:TEXTCOLOR, backgroundColor: BACKCOLOR0};
-var SUBTITLE_STYLE = {position: 'top-right', fontWeight: 'normal', fontSize: '24px', color:TEXTCOLOR, backgroundColor: BACKCOLOR0};
-
-var BUTTON_STYLE =   {position: 'middle-left', margin:'0px 4px 4px 4px', fontWeight: 'bold', 'font-size': '14px', color:TEXTCOLOR, backgroundColor: BACKCOLOR};
-var HELP_BTN_SYTLE = {position: 'middle-left', margin:'0px 4px 4px 4px', padding: '0px',  
-        textAlign: 'left', fontWeight: 'bold', fontSize: '14px', color:'green', backgroundColor: BACKCOLOR};
-var LABEL_STYLE = {position: 'middle-left', margin:'4px 4px 4px 4px', fontWeight: 'normal', fontSize: '14px', color:TEXTCOLOR, backgroundColor: BACKCOLOR};
-var LABEL_T_STYLE = {position: 'middle-left', margin:'4px 4px 4px 4px', fontWeight: 'bold', fontSize: '14px', color:TEXTCOLOR, backgroundColor: BACKCOLOR};
-
-var CKBOX_STYLE  = {position: 'middle-left', margin:'4px 4px 4px 4px', fontWeight: 'normal', 'font-size': '14px', color:TEXTCOLOR, backgroundColor: BACKCOLOR};
-var SLIDER_STYLE = {position: 'middle-left', margin:'4px 4px 4px 4px', fontWeight: 'bold',   'font-size': '14px', color:TEXTCOLOR, backgroundColor: BACKCOLOR};
-var SELECT_STYLE = {position: 'middle-left', margin:'0px 4px 4px 4px', fontWeight: 'bold',   'font-size': '14px', color:TEXTCOLOR, backgroundColor: BACKCOLOR};
-var EDIT_STYLE = {position: 'middle-left', margin:'0px 4px 4px 4px', fontWeight: 'bold',   'font-size': '14px', color:TEXTCOLOR, backgroundColor: BACKCOLOR};
-
-var LEGEND_STYLE = {border: '1px solid black',fontWeight: 'bold', 
-        fontSize: '10px', margin: '0 0 0 8px', padding: '0',width: '150px',
-        position: 'bottom-left', color:TEXTCOLOR, backgroundColor: BACKCOLOR}
-var LEGEND_TITLE_STYLE = {fontWeight: 'bold', 'font-size': '12px', backgroundColor:BACKCOLOR};
-var LEGEND_TEXT_STYLE = {fontWeight: 'normal', 'font-size': '12px', margin: '0 0 4px 6px', backgroundColor:BACKCOLOR};
 /************************************************************************************
  * Configure layers and locations
  ************************************************************************************/
 //Use dataset USDOS LSIB 2017
 //var COUNTRY_DATASET = ee.FeatureCollection('USDOS/LSIB/2017');
 var COUNTRY_DATASET = ee.FeatureCollection('USDOS/LSIB_SIMPLE/2017');
-var GAUL1 = ee.FeatureCollection('users/rayoly/g2008_1');
 //var country_name_key = 'COUNTRY_NA'
 var country_name_key = 'country_na'
 //default values
@@ -188,12 +163,12 @@ var help_text = ui.Label({
   'out of or in connection with the software or the use or other dealings in the ' +
   'software.',
   style: {position: 'top-left', margin:'10px 4px 4px 4px', padding:'0px', 
-  width: '330px', whiteSpace: 'pre-wrap', color:'#44546A', backgroundColor: BACKCOLOR}});
-var help_quit = ui.Button({label: 'X',style: {position: 'top-right', color: 'red', backgroundColor: BACKCOLOR}});
+  width: '330px', whiteSpace: 'pre-wrap', color:'#44546A', backgroundColor: GUIPREF.BACKCOLOR}});
+var help_quit = ui.Button({label: 'X',style: {position: 'top-right', color: 'red', backgroundColor: GUIPREF.BACKCOLOR}});
 var help_panel = ui.Panel({
   layout: ui.Panel.Layout.absolute(),
   widgets: [help_quit, help_text],
-  style: {width: '450px', height: '150px', color:TEXTCOLOR, backgroundColor: BACKCOLOR}
+  style: {width: '450px', height: '150px', color:GUIPREF.TEXTCOLOR, backgroundColor: GUIPREF.BACKCOLOR}
 });
 
 function show_help_panel(text) {
@@ -211,28 +186,6 @@ function ClearMap(array){
     mapPanel.remove(mapPanel.layers().get(0));
   }
 }
-/****************************************************************************************
-* 
-*****************************************************************************************/
-function Average(array){
-  var avg = array.reduce(function(a, b) { return a + b; })/array.length;
-  return avg;
-}
-
-/****************************************************************************************
-* 
-*****************************************************************************************/
-function Average5(array, index){
-  var tmparray = array.slice();
-  var N = tmparray.length;
-  while(N<=index+5){
-    tmparray.push(0);
-    N = N + 1;
-  }
-  var avg = Average(tmparray.slice(index,index+5));
-  
-  return avg;
-}
 
 /*****************************************************************************************
  * Map panel configuration
@@ -242,9 +195,9 @@ ui.root.setLayout(ui.Panel.Layout.flow('horizontal'));
 /****************************************************************************************
 * GUI: Create a control panel.
 *****************************************************************************************/
-var header = ui.Label('SDG 6.6.1: Water Change', TITLE_STYLE);
-var subheader = ui.Label('Sub-Indicator 1', SUBTITLE_STYLE);
-var toolPanel = ui.Panel([header, subheader], 'flow', PANEL_STYLE);
+var header = ui.Label('SDG 6.6.1: Water Change', GUIPREF.TITLE_STYLE);
+var subheader = ui.Label('Sub-Indicator 1', GUIPREF.SUBTITLE_STYLE);
+var toolPanel = ui.Panel([header, subheader], 'flow', GUIPREF.PANEL_STYLE);
 
 /*****************************************************************************************
 * GUI: Create a map panel.
@@ -268,38 +221,11 @@ mapPanel.setCenter(
 ****************************************************************************************/
 var graphPanel = ui.Panel([],  'flow', 
   {border: '1px solid black', width: '300px', height: '200px', position: 'bottom-right', shown:false } );
-graphPanel.add(ui.Label('Water Area Over Time', {fontWeight: 'bold', color:TEXTCOLOR}))
+graphPanel.add(ui.Label('Water Area Over Time', {fontWeight: 'bold', color:GUIPREF.TEXTCOLOR}))
 
 mapPanel.add(graphPanel)
 ui.root.widgets().reset([toolPanel, mapPanel]);
 
-/****************************************************************************************
-* Get administrative region list and polygon
-*****************************************************************************************/
-function GetAdministrativeRegions(country)
-{
-  var ADM1Lst = GAUL1.filter(ee.Filter.eq('ADM0_NAME',country));
-  var RegionLst = ee.List(ADM1Lst.aggregate_array('ADM1_NAME')).distinct().getInfo();
-  var RegionPolygon = [];
-  for (var key in RegionLst) {
-    //Select a specific country
-    RegionPolygon[key] = ADM1Lst
-      .filterMetadata('ADM1_NAME','equals',key)
-      .first().geometry();
-  }
-  RegionLst = ['All'].concat(RegionLst);
-  return RegionLst;
-}
-
-function GetAdministrativeRegionsPolygon(country, region)
-{
-  var RegionPolygon = GAUL1
-    .filter(ee.Filter.eq('ADM0_NAME',country))
-    .filter(ee.Filter.eq('ADM1_NAME',region))
-    .first().geometry();
-
-  return RegionPolygon;
-}
 /****************************************************************************************
 * Get clipping polygon from USGS dataset or shapefile
 *****************************************************************************************/
@@ -321,7 +247,7 @@ var GetClippingPolygon = function () {
     if(defaultRegion=='All'){
       poly = defaultLocation.polygon;
     }else{
-      poly = GetAdministrativeRegionsPolygon(defaultCountry, defaultRegion);
+      poly = AdministrativeRegions.RegionPolygon(defaultCountry, defaultRegion);
     }
   }
   return poly;
@@ -367,7 +293,7 @@ var DisplayWaterLayer = function(){
     waterInfo = ui.Label('Extent of water during ' + defaultYear +  '/' + defaultMonth + ' [' + defaultDB + ']:\n'
           + '*Permanent='+area3.getInfo().toFixed(1)+'km2\n'
           + '*Seasonal='+area2.getInfo().toFixed(1)+'km2',  
-          {fontWeight: 'bold', color:TEXTCOLOR});
+          {fontWeight: 'bold', color: GUIPREF.TEXTCOLOR});
     
   }else{
     mapPanel.add(ui.Map.Layer(ImgWaterRegion.select('NDWI'),NDWI_visParam,'NDWI',false));
@@ -375,7 +301,7 @@ var DisplayWaterLayer = function(){
     
     waterInfo = ui.Label('Extent of water during ' + defaultYear +  '/' + defaultMonth + ' [' + defaultDB + ']:\n'
           + '*Area=' + area3.getInfo().toFixed(1) + 'km2'
-          ,{fontWeight: 'bold', color:TEXTCOLOR});
+          ,{fontWeight: 'bold', color: GUIPREF.TEXTCOLOR});
   }
   graphPanel.widgets().set(1, waterInfo);
   graphPanel.style().set('shown',true);
@@ -592,8 +518,8 @@ var CalcWaterArea = function(){
       var beta3 = Average5(data.area3, 2001-1984);
       var beta2 = Average5(data.area2, 2001-1984);      
       for(i=0;i<data.area3.length;i++){
-          gamma2 = Average5(data.area2,i);
-          gamma3 = Average5(data.area3,i);
+          gamma2 = AVG.Average5(data.area2,i);
+          gamma3 = AVG.Average5(data.area3,i);
           data.pctchange2.push( (beta2-gamma2)/beta2*100 );
           data.pctchange3.push( (beta3-gamma3)/beta3*100 );
       }
@@ -773,7 +699,7 @@ var exportMap = function(){
 var yearSelect = ui.Select({
   items: Array.apply(null, {length: 39}).map( function(number, index){return (1981+index).toString()}),
   value: defaultLayer.availableYears[1],
-  style: SELECT_STYLE,
+  style: GUIPREF.SELECT_STYLE,
   onChange: function(year) {
     defaultYear = year;
   }
@@ -781,7 +707,7 @@ var yearSelect = ui.Select({
 var monthSelect = ui.Select({
   items: availableMonths,
   value: availableMonths[0],
-  style: SELECT_STYLE,
+  style: GUIPREF.SELECT_STYLE,
   onChange: function(month) {
     defaultMonth = month;
     if(defaultMonth=='All'){
@@ -794,9 +720,9 @@ var monthSelect = ui.Select({
 });
 // Add the select to the toolPanel with some explanatory text.
 var yearPanel = ui.Panel([
-  ui.Label( 'Reference Date (Year, Month):', LABEL_T_STYLE), 
+  ui.Label( 'Reference Date (Year, Month):', GUIPREF.LABEL_T_STYLE), 
   yearSelect, monthSelect],
-  ui.Panel.Layout.flow('horizontal',true), CNTRL_PANEL_STYLE);
+  ui.Panel.Layout.flow('horizontal',true), GUIPREF.CNTRL_PANEL_STYLE);
   
 /****************************************************************************************
 * Define the pulldown menu.  Changing the pulldown menu changes the displayed location
@@ -808,7 +734,7 @@ var index = locations.sort().indexOf(defaultCountry);
 var countrySelect = ui.Select({
   items: locations.sort(),
   value: locations[index],
-  style: SELECT_STYLE,
+  style: GUIPREF.SELECT_STYLE,
   onChange: function(value) {
     defaultLocation = locationDict[value];
     defaultCountry = value;
@@ -817,12 +743,12 @@ var countrySelect = ui.Select({
     defaultLocation.lat = ee.Number(defaultLocation.lat).getInfo();
     defaultLocation.lon = ee.Number(defaultLocation.lon).getInfo();
 	//Get administrative regions
-  var RegionLst = GetAdministrativeRegions(defaultCountry);
+  var RegionLst = AdministrativeRegions.RegionsList(defaultCountry);
 	defaultRegion = 'All';
 	var regionSelect = ui.Select({
       items: RegionLst,
       value: RegionLst[0],
-      style: SELECT_STYLE,
+      style: GUIPREF.SELECT_STYLE,
       onChange: function(value) {
         defaultRegion = value;
       }
@@ -834,11 +760,11 @@ var countrySelect = ui.Select({
   }
 });
 
-var RegionLst = GetAdministrativeRegions(defaultCountry);
+var RegionLst = AdministrativeRegions.RegionsList(defaultCountry);
 var regionSelect = ui.Select({
   items: RegionLst,
   value: RegionLst[0],
-  style: SELECT_STYLE,
+  style: GUIPREF.SELECT_STYLE,
   onChange: function(value) {
     defaultRegion = value;
   }
@@ -850,7 +776,7 @@ var regionSelect = ui.Select({
 var DBSelect = ui.Select({
   items: availableDB,
   value: defaultDB,
-  style: SELECT_STYLE,
+  style: GUIPREF.SELECT_STYLE,
   onChange: function(value) {
     defaultDB = value;
     //update layer prop
@@ -866,43 +792,43 @@ var DBSelect = ui.Select({
   }
 });    
 
-EDIT_STYLE.width = '50px';
+GUIPREF.EDIT_STYLE.width = '50px';
 var ndwi_textbox = ui.Textbox({
   value: ndwi_textbox,
   placeholder: 'NDWI threshold',
-  style: EDIT_STYLE,
+  style: GUIPREF.EDIT_STYLE,
   onChange: function(text) {
     NDWI_threshold = Number(text);
     show_help_panel('NDWI Threshold ' + NDWI_threshold );
   }
 });
 
-var DBPanel = ui.Panel([ui.Label('Dataset:', LABEL_T_STYLE),   DBSelect,
+var DBPanel = ui.Panel([ui.Label('Dataset:', GUIPREF.LABEL_T_STYLE),   DBSelect,
   ndwi_textbox,
   ui.Button('?',  function() {show_help_panel(['GSW: Global Surface Water v1.0. (1984-2015) \nS2: Level 1C Sentinel-2 data used to calculate NDWI. (2015-)'
   + '\nThe NDWI default threshold is 0.5.'
   + '\nDue to the complexity of accurately detecting water over long timeframes,'
-  + ' it is recommended to use GSW.'])}, false, HELP_BTN_SYTLE)], 
-  ui.Panel.Layout.flow('horizontal',true), CNTRL_PANEL_STYLE);
+  + ' it is recommended to use GSW.'])}, false, GUIPREF.HELP_BTN_STYLE)], 
+  ui.Panel.Layout.flow('horizontal',true), GUIPREF.CNTRL_PANEL_STYLE);
 
 
 /****************************************************************************************
 * GUI: Text box for the use of an asset file
 *****************************************************************************************/
-EDIT_STYLE.width = '200px';
+GUIPREF.EDIT_STYLE.width = '200px';
 var asset_textbox = ui.Textbox({
   placeholder: 'users/.../',
-  style: EDIT_STYLE,
+  style: GUIPREF.EDIT_STYLE,
   onChange: function(text) {
     defaultAssetName = text;
     show_help_panel('New asset to use ' + defaultAssetName );
   }
 });
 
-EDIT_STYLE.width = '50px';
+GUIPREF.EDIT_STYLE.width = '50px';
 var asset_LID_textbox = ui.Textbox({
   placeholder: 'Layer ID',
-  style: EDIT_STYLE,
+  style: GUIPREF.EDIT_STYLE,
   onChange: function(text) {
     active_preshape.setValue(false);
     active_gee_asset.setValue(true);
@@ -916,27 +842,30 @@ var asset_LID_textbox = ui.Textbox({
 ******************************************************************************************/
 var helppreshape = ui.Button('?',  
 function() {show_help_panel('Select the Region Of Interest, based on USDOS LSIB. Regional levels are defined from GAUL level 1, 2008.')}, 
-false, HELP_BTN_SYTLE);
-var active_preshape = ui.Checkbox( {label:'Predefined:', value: true, style: CKBOX_STYLE} );
+false, GUIPREF.HELP_BTN_STYLE);
+var active_preshape = ui.Checkbox( {label:'Predefined:', value: true, style: GUIPREF.CKBOX_STYLE} );
 active_preshape.setDisabled(true);
 var predefLocPanel = ui.Panel( [active_preshape,countrySelect, regionSelect,helppreshape],
-  ui.Panel.Layout.flow('horizontal',true), CNTRL_PANEL_STYLE);
+  ui.Panel.Layout.flow('horizontal',true), GUIPREF.CNTRL_PANEL_STYLE);
 
 var helpgeeasset = ui.Button('?',  function() {show_help_panel('Select a region from your GEE ASSETS with the defined layer ID. Only available when running through own GEE account!')}, 
-  false, HELP_BTN_SYTLE);
-var active_gee_asset = ui.Checkbox( {label:'GEE ASSET Shapefile:', value: false, style: CKBOX_STYLE} );
+  false, GUIPREF.HELP_BTN_STYLE);
+var active_gee_asset = ui.Checkbox( {label:'GEE ASSET Shapefile:', value: false, style: GUIPREF.CKBOX_STYLE} );
 active_gee_asset.setDisabled(true);
 var loadingLabel = ui.Label({
       value: 'Loading...',
-      style: {stretch: 'vertical', color: 'gray', shown: false, backgroundColor: BACKCOLOR}
+      style: {stretch: 'vertical', color: 'gray', shown: false, backgroundColor: GUIPREF.BACKCOLOR}
     })
 var assetPanel = ui.Panel([
     active_gee_asset, 
-    ui.Panel([asset_textbox, asset_LID_textbox, helpgeeasset, loadingLabel],ui.Panel.Layout.flow('horizontal',true),CNTRL_PANEL_STYLE)
+    ui.Panel([asset_textbox, asset_LID_textbox, helpgeeasset, loadingLabel],
+    ui.Panel.Layout.flow('horizontal',true),
+    GUIPREF.CNTRL_PANEL_STYLE)
   ],
-  'flow', CNTRL_PANEL_STYLE);
+  'flow', GUIPREF.CNTRL_PANEL_STYLE);
 
-var LocationPanel = ui.Panel([ui.Label( 'Location:', LABEL_T_STYLE),  predefLocPanel, assetPanel], 'flow', CNTRL_PANEL_STYLE);
+var LocationPanel = ui.Panel([ui.Label( 'Location:', GUIPREF.LABEL_T_STYLE),  predefLocPanel, assetPanel], 
+  'flow', GUIPREF.CNTRL_PANEL_STYLE);
 
 toolPanel.add(ui.Panel([DBPanel, yearPanel, LocationPanel],ui.Panel.Layout.flow('vertical',true)));
 yearSelect.setValue(defaultLayer.availableYears[0]);
@@ -946,15 +875,15 @@ yearSelect.setValue(defaultLayer.availableYears[0]);
 * GUI: Create the legend.
 ******************************************************************************************/
 // Define a panel for the legend and give it a tile.
-var legendPanel = ui.Panel({style: LEGEND_STYLE});
+var legendPanel = ui.Panel({style: GUIPREF.LEGEND_STYLE});
 mapPanel.add(legendPanel);
 
-var legendTitle = ui.Label('Legend',  LEGEND_TITLE_STYLE);
+var legendTitle = ui.Label('Legend',  GUIPREF.LEGEND_TITLE_STYLE);
 legendPanel.add(legendTitle);
 
 // Define an area for the legend key itself.
 // This area will be replaced every time the layer pulldown is changed.
-var keyPanel = ui.Panel({style: {backgroundColor:BACKCOLOR}});
+var keyPanel = ui.Panel({style: {backgroundColor: GUIPREF.BACKCOLOR}});
 legendPanel.add(keyPanel);
 
 function setLegend(layer) {
@@ -974,7 +903,7 @@ function setLegend(layer) {
       });
       // Create the label with the description text.
       keyPanel.add(
-          ui.Panel([colorBox, ui.Label(name, LEGEND_TEXT_STYLE)], ui.Panel.Layout.Flow('horizontal')),{});
+          ui.Panel([colorBox, ui.Label(name, GUIPREF.LEGEND_TEXT_STYLE)], ui.Panel.Layout.Flow('horizontal')),{});
     }
   }else{
     // Create the color bar for the legend.
@@ -990,7 +919,8 @@ function setLegend(layer) {
       },
       style: {stretch: 'horizontal', margin: '0', maxHeight: '8px'},
     });
-    keyPanel.add(ui.Panel([ui.Label(layer.visParam.min, LEGEND_TEXT_STYLE), colorBar, ui.Label(layer.visParam.max, LEGEND_TEXT_STYLE)], 
+    keyPanel.add(ui.Panel([ui.Label(layer.visParam.min, GUIPREF.LEGEND_TEXT_STYLE), colorBar, 
+      ui.Label(layer.visParam.max, GUIPREF.LEGEND_TEXT_STYLE)], 
       ui.Panel.Layout.Flow('horizontal'), {}));
   }
 }
@@ -1003,7 +933,7 @@ function setLegend(layer) {
 var checkbox = ui.Checkbox({
   label: 'Layer Opacity',
   value: true,
-  style: CKBOX_STYLE,
+  style: GUIPREF.CKBOX_STYLE,
   onChange: function(value) {
     var selected = yearSelect.getValue();
     // Loop through the layers in the mapPanel. For each layer,
@@ -1021,28 +951,28 @@ var checkbox = ui.Checkbox({
 
 // Create an opacity slider. This tool will change the opacity for each layer.
 // That way switching to a new layer will maintain the chosen opacity.
-var opacitySlider = ui.Slider({  min: 0,  max: 1,  value: 1,  step: 0.01,  style: SLIDER_STYLE});
+var opacitySlider = ui.Slider({  min: 0,  max: 1,  value: 1,  step: 0.01,  style: GUIPREF.SLIDER_STYLE});
 opacitySlider.onSlide(function(value) {
   mapPanel.layers().forEach(function(element, index) {
     element.setOpacity(value);
   });
 });
 
-var mailPanel = ui.Panel([ui.Label('Raymond Olympio, 2019', {backgroundColor: BACKCOLOR}, 'mailto:rayoly@gmail.com')], 
-  ui.Panel.Layout.Flow('horizontal'), CNTRL_PANEL_STYLE);
-var viewPanel = ui.Panel([checkbox, opacitySlider], ui.Panel.Layout.Flow('horizontal'), CNTRL_PANEL_STYLE);
+var mailPanel = ui.Panel([ui.Label('Raymond Olympio, 2019', {backgroundColor: GUIPREF.BACKCOLOR}, 'mailto:rayoly@gmail.com')], 
+  ui.Panel.Layout.Flow('horizontal'), GUIPREF.CNTRL_PANEL_STYLE);
+var viewPanel = ui.Panel([checkbox, opacitySlider], ui.Panel.Layout.Flow('horizontal'), GUIPREF.CNTRL_PANEL_STYLE);
 
 //-------------------------------------------------------------
 var helpmap = ui.Button('?',
   function() {show_help_panel('Update the map with the water layer calculated from the selected dataset, year and month. When Month="All", the yearly average is displayed.')},
-  false, HELP_BTN_SYTLE);
-var genMapBtn = ui.Button( 'Update Map', DisplayWaterLayer, false, BUTTON_STYLE);
-var mapCntrl = ui.Panel([genMapBtn, helpmap],ui.Panel.Layout.Flow('horizontal'), CNTRL_PANEL_STYLE);
+  false, GUIPREF.HELP_BTN_STYLE);
+var genMapBtn = ui.Button( 'Update Map', DisplayWaterLayer, false, GUIPREF.BUTTON_STYLE);
+var mapCntrl = ui.Panel([genMapBtn, helpmap],ui.Panel.Layout.Flow('horizontal'), GUIPREF.CNTRL_PANEL_STYLE);
 //-------------------------------------------------------------  
 var rangeTypeSelect = ui.Select({
   items: ['Yearly','Monthly'],
   value: 'Yearly',
-  style: SELECT_STYLE,
+  style: GUIPREF.SELECT_STYLE,
   onChange: function(rt) {
     rangeType = rt;
   }
@@ -1050,15 +980,16 @@ var rangeTypeSelect = ui.Select({
 var helprange = ui.Button('?', 
   function() {show_help_panel('Generate a graph with the change in water area over a time frame in years or months for the current year.'+
   '\nDisplay the extremum water loss and gain from the reference Year onwards.')},
-  false, HELP_BTN_SYTLE);
-var genGraphBtn = ui.Button( 'Generate Trend Graph', plotTrend, false, BUTTON_STYLE);
-var graphCntrl = ui.Panel([genGraphBtn,rangeTypeSelect,helprange],  ui.Panel.Layout.Flow('horizontal'), CNTRL_PANEL_STYLE);
+  false, GUIPREF.HELP_BTN_STYLE);
+var genGraphBtn = ui.Button( 'Generate Trend Graph', plotTrend, false, GUIPREF.BUTTON_STYLE);
+var graphCntrl = ui.Panel([genGraphBtn,rangeTypeSelect,helprange],  
+  ui.Panel.Layout.Flow('horizontal'), GUIPREF.CNTRL_PANEL_STYLE);
 //-------------------------------------------------------------  
-var helpexp = ui.Button('?', function() {show_help_panel('Export current layers to Google Drive folder.')}, false, HELP_BTN_SYTLE);
+var helpexp = ui.Button('?', function() {show_help_panel('Export current layers to Google Drive folder.')}, false, GUIPREF.HELP_BTN_STYLE);
 
 var expMapBtn = ui.Button( 'Export Current Map', 
-  exportMap, false, BUTTON_STYLE);
-var exportPanel = ui.Panel([expMapBtn, helpexp],ui.Panel.Layout.Flow('horizontal'), CNTRL_PANEL_STYLE);
+  exportMap, false, GUIPREF.BUTTON_STYLE);
+var exportPanel = ui.Panel([expMapBtn, helpexp],ui.Panel.Layout.Flow('horizontal'), GUIPREF.CNTRL_PANEL_STYLE);
 //-------------------------------------------------------------  
 var trendPanel = ui.Panel([mapCntrl, graphCntrl], 
     ui.Panel.Layout.Flow('vertical'));
@@ -1074,11 +1005,12 @@ toolPanel.add(mailPanel);
 // Create a hyperlink to an external reference.
 var gsw_info = ui.Label(
     'GSW dataset: J.-F. Pekel, A. Cottam, N. Gorelick, A. S. Belward, "High-resolution mapping of global surface water and its long-term changes." Nature 540, 418-422 (2016).', 
-    {backgroundColor: BACKCOLOR},
+    {backgroundColor: GUIPREF.BACKCOLOR},
     'https://www.nature.com/articles/nature20584');
 var sentinel_info = ui.Label('Copernicus/Sentinel-2 data available from Jun 23, 2015 - ',
-    {backgroundColor: BACKCOLOR},
+    {backgroundColor: GUIPREF.BACKCOLOR},
     'http://');
-var referencePanel = ui.Panel([ui.Label('For more information', LABEL_T_STYLE), gsw_info, sentinel_info],'flow',CNTRL_PANEL_STYLE);
+var referencePanel = ui.Panel([ui.Label('For more information', GUIPREF.LABEL_T_STYLE), gsw_info, sentinel_info],
+  'flow', GUIPREF.CNTRL_PANEL_STYLE);
 
 toolPanel.add(referencePanel);
