@@ -21,13 +21,13 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 */
-
-var AVG = require('users/rayoly/SDG_APP:fnc/Average_fnc.js');
-var AOI = require('users/rayoly/SDG_APP:fnc/AOI.js');
-var EXPORT_MAP = require('users/rayoly/SDG_APP:fnc/exportMap.js');
-var GUIPREF = require('users/rayoly/SDG_APP:fnc/GUI_Prefs.js');
-var LEGEND = require('users/rayoly/SDG_APP:fnc/Legend.js');
-var HELP = require('users/rayoly/SDG_APP:fnc/helpBox.js');
+var CONFIG = require('users/rayoly/SDG_APP:config.js');
+var AVG = require(CONFIG.PATH + ':fnc/Average_fnc.js');
+var AOI = require(CONFIG.PATH + ':fnc/AOI.js');
+var EXPORT_MAP = require(CONFIG.PATH + ':fnc/exportMap.js');
+var GUIPREF = require(CONFIG.PATH + ':fnc/GUI_Prefs.js');
+var LEGEND = require(CONFIG.PATH + ':fnc/Legend.js');
+var HELP = require(CONFIG.PATH + ':fnc/helpBox.js');
 
 /************************************************************************************
  * Configure layers and locations

@@ -1,3 +1,34 @@
+/*
+MIT License
+
+Copyright (c) 2019 Raymond Olympio, rayoly@gmail.com
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+*/
+/*----------------------------------------------------------------------------------------
+This script generate a legend on the  Map based on input parameters.
+The legend can be discrete or continuous.
+The plotting of a legend is updated by calling "setLegend" with the layer definition.
+The layer definition must include the legend's type and visualization parameters:
+  .type: 'discrete' or 'continuous'
+  .style: visualization parameters
+-----------------------------------------------------------------------------------------*/
 
 /******************************************************************************************
 * GUI: Create the legend.
@@ -67,39 +98,4 @@ exports.setLegend = function(layer, GUIPREF) {
         ui.Label(layer.visParam.max, GUIPREF.LEGEND_TEXT_STYLE)], 
       ui.Panel.Layout.Flow('horizontal'), {}));
   }
-}
-
-/******************************************************************************************
- * Set scale
-*******************************************************************************************/
-exports.createScale = function(){
-
-var visParam = {min:0, margin:0, padding:0, max:1, palete: ['black','white']};
-
-var unit_distance = 5; //unit in km
-var cur_scale = (Map.getScale()/1000.0);//scale in km
-
-var lon = ee.Image.pixelLonLat().select('longitude'); //longitude in arc degrees
-var lat = ee.Image.pixelLonLat().select('latitude'); //latitude in arc degrees
-var length_lon1deg = lat.multiply(3.1415/180).cos().multiply(111.0);
-var scale = (lon.multiply(length_lon1deg)).multiply(3.1415/unit_distance).sin().gt(0);
-
-
-var colorBar = ui.Thumbnail({
-  image: scale,
-  params: {
-	bbox: [0, 0, 10, 0.1],
-	dimensions: '100x10',
-	format: 'png',
-	min: visParam.min,
-	max: visParam.max,
-	palette: visParam.palette
-  },
-  style: {stretch: 'horizontal', border:'1px solid black', 
-	margin: '0', padding:'0', maxHeight: '12px'},
-});
-var panel = ui.Panel([ui.Label(0, {}), colorBar,  ui.Label(unit_distance, {})],
-  ui.Panel.Layout.Flow('horizontal'),{});
- 
-            
 }

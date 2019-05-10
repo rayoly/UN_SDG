@@ -21,14 +21,14 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 */
-
-var AVG = require('users/rayoly/SDG_APP:fnc/Average_fnc.js');
-var AOI = require('users/rayoly/SDG_APP:fnc/AOI.js');
-var EXPORT_MAP = require('users/rayoly/SDG_APP:fnc/exportMap.js');
-var GUIPREF = require('users/rayoly/SDG_APP:fnc/GUI_Prefs.js');
-var LEGEND = require('users/rayoly/SDG_APP:fnc/Legend.js');
-var HELP = require('users/rayoly/SDG_APP:fnc/helpBox.js');
-var GUI_AOI = require('users/rayoly/SDG_APP:fnc/GUI_AOI.js');
+var CONFIG = require('users/rayoly/SDG_APP:config.js');
+var AVG = require(CONFIG.PATH + ':fnc/Average_fnc.js');
+var AOI = require(CONFIG.PATH + ':fnc/AOI.js');
+var EXPORT_MAP = require(CONFIG.PATH + ':fnc/exportMap.js');
+var GUIPREF = require(CONFIG.PATH + ':fnc/GUI_Prefs.js');
+var LEGEND = require(CONFIG.PATH + ':fnc/Legend.js');
+var HELP = require(CONFIG.PATH + ':fnc/helpBox.js');
+var GUI_AOI = require(CONFIG.PATH + ':fnc/GUI_AOI.js');
 
 /************************************************************************************
  * Configure layers and locations
@@ -47,7 +47,7 @@ var DEM_DATASET = {data:ee.Image('CGIAR/SRTM90_V4'), scale:90, coef:1};
 var POP = { GHSL: {data:ee.ImageCollection('JRC/GHSL/P2016/POP_GPW_GLOBE_V1'), scale: 250, coef:1}, //250m resolution
             WORLDPOP: {data:ee.ImageCollection("WorldPop/POP"), rural_mask:[], scale: 100, coef:1},//100x100, 3arcsec
             GPW: {data:ee.ImageCollection("CIESIN/GPWv4/population-count"), scale: 1000, coef:1}, //1000x1000, 30arcsec
-            FACEBOOKAI: {data:ee.ImageCollection.fromImages(ee.List([ee.Image('users/rayoly/population_AF_2018-10-01')
+            FACEBOOKAI: {data:ee.ImageCollection.fromImages(ee.List([ee.Image('users/' + CONFIG.USER + '/population_AF_2018-10-01')
               .set('system:time_start',ee.Date.fromYMD(2018, 3, 1 ).millis())
               .set('system:time_end',ee.Date.fromYMD(2018, 12, 31 ).millis())])),	scale: 30, coef:1}, //1 arcsec=30m
             };
@@ -72,7 +72,7 @@ app.defaultCountry = 'Namibia';
 app.defaultRegion = 'All';
 app.rangeType = 'Yearly';
 app.defaultYear = '2015';
-app.defaultAssetName = 'users/rayoly/NAMIBIA_Regional_Boundaries_2014';
+app.defaultAssetName = 'users/' + CONFIG.USER + '/NAMIBIA_Regional_Boundaries_2014';
 app.defaultUseWater = false; //use water dataset to account for inaccessible roads
 app.defaultUseDEM = false; //use DEM to account for terrain in evaluating distances
 app.defaultMaxRuralDensity = 300; //max rural population density in inhabitants/km2
@@ -86,7 +86,7 @@ app.defaultDist2Road = 2000;
 app.availableYears = ['2010','2011','2015','2016','2018'];//['1990','2000','2005','2010','2015','2020'];//Array.apply(null, {length: 28}).map( function(number, index){return (1990+index).toString()});//['1990','2000','2010','2011','2015'];
 //
 app.defaultPopAsset = '';
-app.defaultRuralAsset = '';//'users/rayoly/NAMIBIA_Omaheke_Rural_Urban_Mask';
+app.defaultRuralAsset = '';//'users/' + CONFIG.USER + '/NAMIBIA_Omaheke_Rural_Urban_Mask';
 //CRS
 app.EXPORT_CRS = 'EPSG:4326';
 /***********************************************************************************/

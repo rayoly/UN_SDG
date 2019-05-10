@@ -13,7 +13,7 @@ exports.SUBTITLE_STYLE = {position: 'top-right', fontWeight: 'normal', fontSize:
 
 exports.BUTTON_STYLE =   {position: 'middle-left', margin:'0px 4px 4px 4px', fontWeight: 'bold', 'font-size': '14px', color:exports.TEXTCOLOR, backgroundColor: exports.BACKCOLOR};
 exports.HELP_BTN_STYLE = {position: 'middle-left', margin:'0px 4px 4px 4px', padding: '0px',  
-        textAlign: 'left', fontWeight: 'bold', fontSize: '14px', color:'green', backgroundColor: exports.BACKCOLOR};
+        textAlign: 'left', fontWeight: 'bold', fontSize: '12px', color:'green', backgroundColor: exports.BACKCOLOR};
 exports.LABEL_STYLE = {position: 'middle-left', margin:'4px 4px 4px 4px', fontWeight: 'normal', fontSize: '14px', color:exports.TEXTCOLOR, backgroundColor: exports.BACKCOLOR};
 exports.LABEL_T_STYLE = {position: 'middle-left', margin:'4px 4px 4px 4px', fontWeight: 'bold', fontSize: '14px', color:exports.TEXTCOLOR, backgroundColor: exports.BACKCOLOR};
 

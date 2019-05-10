@@ -1,8 +1,38 @@
-var countryAbbr = require('users/rayoly/SDG_APP:fnc/countryAbbr.js');
+/*
+MIT License
+
+Copyright (c) 2019 Raymond Olympio, rayoly@gmail.com
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+*/
+/*----------------------------------------------------------------------------------------
+This script's functions return information about areas of interests such as name, shape
+The information is based on GAUL 2008 for the countries' administrative regions
+and USDOS LSIB_SIMPLE 2017 for the countries
+-----------------------------------------------------------------------------------------*/
+var CONFIG = require('users/rayoly/SDG_APP:config.js');
+var countryAbbr = require(CONFIG.PATH + ':fnc/countryAbbr.js');
+
 /****************************************************************************************
 * Get administrative region list and polygon
 *****************************************************************************************/
-exports.GAUL1 = ee.FeatureCollection('users/rayoly/g2008_1');
+exports.GAUL1 = ee.FeatureCollection('users/' + CONFIG.USER + '/GAUL_2008_1');
 //Use dataset USDOS LSIB 2017
 exports.COUNTRY_DATASET = ee.FeatureCollection('USDOS/LSIB_SIMPLE/2017');
 //
