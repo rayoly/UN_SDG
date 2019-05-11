@@ -33,16 +33,13 @@ var HELP = require('users/rayoly/SDG_APP:fnc/helpBox.js');
  * Configure layers and locations
  ************************************************************************************/
 //Use dataset USDOS LSIB 2017
-//var COUNTRY_DATASET = ee.FeatureCollection('USDOS/LSIB/2017');
 var COUNTRY_DATASET = ee.FeatureCollection('USDOS/LSIB_SIMPLE/2017');
 var app = {};
 //include modis land classification to extract water  mask
 var FOREST_MASK = ee.ImageCollection('MODIS/006/MCD12Q1')
-.select('LC_Type1')
-.map(function(img){return img.lte(8);});
+  .select('LC_Type1')
+  .map(function(img){return img.lte(8);});
 
-//var country_name_key = 'COUNTRY_NA'
-app.country_name_key = 'country_na'
 //default values
 app.defaultCountry = 'Namibia';
 app.defaultRegion = 'All';

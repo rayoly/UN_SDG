@@ -347,10 +347,9 @@ var DisplayWaterLayer_S2 = function(poly, S2_DWI_type, month, year){
 *****************************************************************************************/
 var waterCount = function(image, geometry, AreaScale, WATER_TYPE){
 
-  var area = ee.Image.pixelArea();
   var waterArea = ee.Image(image)
                     .eq(WATER_TYPE)
-                    .multiply(area)
+                    .multiply(ee.Image.pixelArea())
                     .selfMask()
                     .rename('waterArea');
 
@@ -358,7 +357,6 @@ var waterCount = function(image, geometry, AreaScale, WATER_TYPE){
       reducer: ee.Reducer.sum(), 
       geometry: geometry, 
       scale: AreaScale,
-      //bestEffort: true,
       maxPixels: 1e11
     });
   var StrArea = stats.get('waterArea');
@@ -428,6 +426,8 @@ var CalcWaterArea = function(){
       var region = ee.Dictionary(Polygon).get('region');
       poly = ee.Geometry(ee.Dictionary(Polygon).get('poly'));
       outline = ee.Geometry(ee.Dictionary(Polygon).get('outline'));
+      //Region area
+      region_area = ee.Number(waterCount(ee.Image.constant(1), poly, ee.Number(app.defaultLayer.AreaScale), 1)).divide(1e6);
       //loop over years
       var res_year = ee.List(yearRange).map(function(year){
         //loop over months
@@ -443,12 +443,10 @@ var CalcWaterArea = function(){
             DisplayWaterLayer_S2(poly, app.defaultDB, month, year))).select(app.defaultLayer.band);
           
           //-------- Calculate areas
-          area_permanent = ee.Number(waterCount(ImgWaterRegion, poly, ee.Number(app.defaultLayer.AreaScale), ee.Number(3))).divide(1e6);
+          area_permanent = ee.Number(waterCount(ImgWaterRegion, poly, ee.Number(app.defaultLayer.AreaScale), 3)).divide(1e6);
           area_seasonal = ee.Number(ee.Algorithms.If(app.defaultDB=='GSW',
-            ee.Number(waterCount(ImgWaterRegion, poly.polygon, ee.Number(app.defaultLayer.AreaScale), ee.Number(2))).divide(1e6),
+            ee.Number(waterCount(ImgWaterRegion, poly.polygon, ee.Number(app.defaultLayer.AreaScale), 2)).divide(1e6),
             0));
-          //Region area
-          region_area = ee.Number(waterCount(ee.Image.constant(1), poly, ee.Number(app.defaultLayer.AreaScale), 1)).divide(1e6);
           //Surface water coverage
           var WaterCvr = ee.Image.constant(area_permanent.divide(region_area).multiply(100))
                 .clip(poly).rename('Permanent_water_coverage');

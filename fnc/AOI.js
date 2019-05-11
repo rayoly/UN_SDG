@@ -26,13 +26,13 @@ This script's functions return information about areas of interests such as name
 The information is based on GAUL 2008 for the countries' administrative regions
 and USDOS LSIB_SIMPLE 2017 for the countries
 -----------------------------------------------------------------------------------------*/
-var CONFIG = require('users/rayoly/SDG_APP:config.js');
+//var CONFIG = require('users/rayoly/SDG_APP:config.js');
 var countryAbbr = require('users/rayoly/SDG_APP:fnc/countryAbbr.js');
 
 /****************************************************************************************
 * Get administrative region list and polygon
 *****************************************************************************************/
-exports.GAUL1 = ee.FeatureCollection('users/' + CONFIG.USER + '/GAUL_2008_1');
+exports.GAUL1 = ee.FeatureCollection('users/rayoly/GAUL_2008_1');
 //Use dataset USDOS LSIB 2017
 exports.COUNTRY_DATASET = ee.FeatureCollection('USDOS/LSIB_SIMPLE/2017');
 //

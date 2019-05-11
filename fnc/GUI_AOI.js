@@ -207,7 +207,7 @@ exports.selectedPreShape = function(){
   return active_preshape.getValue();
 }
 /****************************************************************************************
-* Retrieve the status of the GEE Asset checkbox
+* Set the status of the GEE Asset checkbox
 *****************************************************************************************/
 exports.setAsset = function(assetName, layerID){
   asset_textbox.setValue(assetName);

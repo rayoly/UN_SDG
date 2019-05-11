@@ -47,7 +47,7 @@ var DEM_DATASET = {data:ee.Image('CGIAR/SRTM90_V4'), scale:90, coef:1};
 var POP = { GHSL: {data:ee.ImageCollection('JRC/GHSL/P2016/POP_GPW_GLOBE_V1'), scale: 250, coef:1}, //250m resolution
             WORLDPOP: {data:ee.ImageCollection("WorldPop/POP"), rural_mask:[], scale: 100, coef:1},//100x100, 3arcsec
             GPW: {data:ee.ImageCollection("CIESIN/GPWv4/population-count"), scale: 1000, coef:1}, //1000x1000, 30arcsec
-            FACEBOOKAI: {data:ee.ImageCollection.fromImages(ee.List([ee.Image('users/' + CONFIG.USER + '/population_AF_2018-10-01')
+            HRSL: {data:ee.ImageCollection.fromImages(ee.List([ee.Image('users/rayoly/population_AF_2018-10-01')
               .set('system:time_start',ee.Date.fromYMD(2018, 3, 1 ).millis())
               .set('system:time_end',ee.Date.fromYMD(2018, 12, 31 ).millis())])),	scale: 30, coef:1}, //1 arcsec=30m
             };
@@ -58,7 +58,7 @@ var empty_mask = ee.ImageCollection([ee.Image([])])
 var RURALMASK = ee.Dictionary({GHSL: ee.Dictionary({data:ee.ImageCollection('JRC/GHSL/P2016/SMOD_POP_GLOBE_V1'), scale: 1000, coef:1}),
                  WORLDPOP: ee.Dictionary({data:empty_mask, scale:1, coef:1}),
                  GPW: ee.Dictionary({data:empty_mask, scale:1, coef:1}),
-                 FACEBOOKAI: ee.Dictionary({data:empty_mask, scale:1, coef:1})});
+                 HRSL: ee.Dictionary({data:empty_mask, scale:1, coef:1})});
 
 //Use dataset USDOS LSIB 2017
 //var COUNTRY_DATASET = ee.FeatureCollection('USDOS/LSIB/2017');
@@ -72,7 +72,7 @@ app.defaultCountry = 'Namibia';
 app.defaultRegion = 'All';
 app.rangeType = 'Yearly';
 app.defaultYear = '2015';
-app.defaultAssetName = 'users/' + CONFIG.USER + '/NAMIBIA_Regional_Boundaries_2014';
+app.defaultAssetName = 'users/rayoly/NAMIBIA_Regional_Boundaries_2014';
 app.defaultUseWater = false; //use water dataset to account for inaccessible roads
 app.defaultUseDEM = false; //use DEM to account for terrain in evaluating distances
 app.defaultMaxRuralDensity = 300; //max rural population density in inhabitants/km2
@@ -86,7 +86,7 @@ app.defaultDist2Road = 2000;
 app.availableYears = ['2010','2011','2015','2016','2018'];//['1990','2000','2005','2010','2015','2020'];//Array.apply(null, {length: 28}).map( function(number, index){return (1990+index).toString()});//['1990','2000','2010','2011','2015'];
 //
 app.defaultPopAsset = '';
-app.defaultRuralAsset = '';//'users/' + CONFIG.USER + '/NAMIBIA_Omaheke_Rural_Urban_Mask';
+app.defaultRuralAsset = '';//'users/rayoly/NAMIBIA_Omaheke_Rural_Urban_Mask';
 //CRS
 app.EXPORT_CRS = 'EPSG:4326';
 /***********************************************************************************/
@@ -158,11 +158,14 @@ var getRuralMask = function(dateStart, dateEnd, Popmap, Polygon, DB_name){
 
   DB_name = 'GHSL';
   var rural_dict = ee.Dictionary(RURALMASK.get(DB_name)).get('data');
-  rural_dict = ee.ImageCollection(rural_dict).filter(ee.Filter.date(dateStart, dateEnd)).first();
+  rural_dict = ee.ImageCollection(rural_dict).filter(ee.Filter.date(dateStart, dateEnd));
+  rural_dict = ee.Image( ee.Algorithms.If(rural_dict.size(),
+        rural_dict.first().set('source',DB_name), 
+        ee.Image.constant(0).set('source','No Rural Mask')) );
 
   var settlement = ee.Image( ee.Algorithms.If(ee.String(app.defaultRuralAsset).length(),
     ee.Image(app.defaultRuralAsset).unmask().eq(0).selfMask().set('source','GEEasset'),
-    rural_dict.set('source',DB_name)) );
+    rural_dict) );
   
   return settlement.clip(Polygon).lte(1.0).copyProperties(settlement);
 };
@@ -222,7 +225,6 @@ var CalcRAI = function(Year, CountryAbbr, lRegion){
   if(population_GEEasset.getValue()){
     useGlobalDataset = 0;
     var scale = Number(pop_reso_textbox.getValue()); 
-    var ruralscale =  Number(ruralmask_reso_textbox.getValue()); 
     print('Imported Population dataset will be used. Scale=' + scale);
     //-- loaded Asset
     geeAssetPop = ee.Image(app.defaultPopAsset)
@@ -234,10 +236,12 @@ var CalcRAI = function(Year, CountryAbbr, lRegion){
     geeAssetPop = ee.Image.constant(0).set('scale',100000,'database','undef','name','undef').rename('undef');
   }
   //
-  var zeroImg = ee.Image.constant(0).selfMask();
+  var zeroImg = ee.Image.constant(0);//.selfMask();
   var oneImg  = ee.Image.constant(1);
+
   //Loop over regions
   result = PolygonLst.map(function(Polygon){
+
     var poly = ee.Geometry(ee.Dictionary(Polygon).get('poly'));
     var outline = ee.Geometry(ee.Dictionary(Polygon).get('outline'));
     var region_name = ee.Dictionary(Polygon).get('region');
@@ -256,7 +260,7 @@ var CalcRAI = function(Year, CountryAbbr, lRegion){
       
     //loop over years
     var res_year = ee.List(yearRange).map(function(year){
-
+      
       var DateStart = ee.String(year).cat('-01-01');
       var DateEnd = ee.String(year).cat('-12-31');
       
@@ -303,23 +307,24 @@ var CalcRAI = function(Year, CountryAbbr, lRegion){
         .set('database','gpw','name','GPW')
         .rename('gpw');//band name must match <database>       
         
-      //-- Facebook Pop
-       var facebookPop = POP.FACEBOOKAI.data
+      //-- Facebook Pop / HRSL
+       var HRSL_Pop = POP.HRSL.data
         .filterBounds(poly)
         .filter(ee.Filter.date( DateStart, DateEnd ));
-      facebookPop = ee.Image(ee.Algorithms.If( facebookPop.size(),
-          facebookPop.first().multiply(POP.FACEBOOKAI.coef).set('scale', POP.FACEBOOKAI.scale), 
+      HRSL_Pop = ee.Image(ee.Algorithms.If( HRSL_Pop.size(),
+          HRSL_Pop.first().multiply(POP.HRSL.coef).set('scale', POP.HRSL.scale), 
           zeroImg.set('scale',10000) ))
+        //.multiply(ee.Image.pixelArea())
         .clip(poly)
-        .set('database','facebookai','name','Facebook AI')
-        .rename('facebookai');//band name must match <database>        
+        .set('database','hrsl','name','HRSL')
+        .rename('hrsl');//band name must match <database>        
 
       /*--------------------------------------------------------
       * Image collection of all population dataset
       *   update the mask
       ---------------------------------------------------------*/
       PopMap = ee.ImageCollection.fromImages( ee.Algorithms.If(useGlobalDataset,
-        [worldPop, gpwPop, ghslPop, facebookPop],
+        [worldPop, gpwPop, ghslPop, HRSL_Pop],
         [geeAssetPop]));
 
       /*--------------------------------------------------------
@@ -392,10 +397,7 @@ var CalcRAI = function(Year, CountryAbbr, lRegion){
         return img
           .addBands( rural )
           .addBands( access )
-          .set('total_pop',stat_total)
-          .set('rural_pop',stat_rural)
-          .set('access_pop',stat_access)
-          .set('RAI',rai)
+          .set('total_pop',stat_total,'rural_pop',stat_rural,'access_pop',stat_access,'RAI',rai)
           .set('source', mask.get('source'));
       });
       //
@@ -522,16 +524,16 @@ var DisplayPopLayer = function(){
   var text1='', text2='', text3='';
   for(var key in DBlst){
     if(total_stats[key]>0){
-      text1 = text1 + '* ' + (total_stats[key]).toFixed(0) + ' (' + DBlst[key] + ')\n';
+      text1 = text1 + '* ' + DBlst[key] + ': ' + (total_stats[key]).toFixed(0) + '\n';
       
       var p1 = 100.0*(rural_stats[key])/(total_stats[key]);
-      text2 = text2 + '* ' + (rural_stats[key]).toFixed(0) + ' inhab. (' + 
-        p1.toFixed(2) + '% of the total pop.) ' + ' (' + DBlst[key] + ')[' + ruralSource[key] + ']\n';     
+      text2 = text2 + '* ' + DBlst[key] + ': ' + (rural_stats[key]).toFixed(0) + ' inhab. (' + 
+        p1.toFixed(2) + '% of the total pop.) ' + ' [' + ruralSource[key] + ']\n';     
           
       if(rural_stats[key]>0){
         var r1 = 100.0*(pop_within_dist[key])/(rural_stats[key]);
-        text3 = text3 + '* ' + (pop_within_dist[key]).toFixed(0) + ' inhab. (' +
-          r1.toFixed(2) + '% of the rural pop.) '  + ' (' + DBlst[key] + ')\n';
+        text3 = text3 + '* ' + DBlst[key] + ': ' + (pop_within_dist[key]).toFixed(0) + ' inhab. (' +
+          r1.toFixed(2) + '% of the rural pop.) \n';
       }
     }
   }
@@ -848,44 +850,57 @@ var pop_textbox = ui.Textbox({
   }
 });
 var ruralmask_textbox = ui.Textbox({
-  placeholder: 'users/<username>/....',
+  placeholder: 'rural mask: users/<username>/....',
   style: GUIPREF.EDIT_STYLE,
   value: '',
   onChange: function(text) {
     app.defaultRuralAsset = text;
   }
 });
+GUIPREF.EDIT_STYLE.width = '50px';
+var pop_reso_textbox = ui.Textbox({
+  placeholder: 'Layer ID',
+  style: GUIPREF.EDIT_STYLE,
+  onChange: function(text) {
+    if((typeof text=='string' && text.length>0) || text>=0){
+      exports.RegionID = Number(text);
+    }else{
+      exports.RegionID = 1000;
+    }
+  }
+});
+  
 pop_textbox.setValue(app.defaultPopAsset)
 ruralmask_textbox.setValue(app.defaultRuralAsset);
 
 //Checkbox to selecct how the rural mask is going to be generated
 var perform_segmentation_ck = ui.Checkbox( {
-  label:'Perform Segmentation on Pop. dataset', 
+  label:'Segmentation', 
   value: app.performSegmentation, 
   style: GUIPREF.CKBOX_STYLE,
   onChange: function (value){
     app.performSegmentation = Number(value);
   }
 });
-var helpseg = HELP.helpButton('If selected, will perform segmentation on all the population dataset. Otherwise, the GHSL Settlement dataset will be used for all dataset, when available!');
+var helpseg = HELP.helpButton('If selected, will perform segmentation on all the population dataset. Otherwise, the specified rural mask or the GHSL Settlement dataset will be used for all datasets, when available!');
 //
 var population_gbl_data = ui.Checkbox( {label:'Population Global Datasets', value: true, style: GUIPREF.CKBOX_STYLE} );
 var population_GEEasset = ui.Checkbox( {label:'Population GEE Asset:', value: false, style: GUIPREF.CKBOX_STYLE} );
 var help_popasset = HELP.helpButton('Enter a population dataset.');
-var help_ruralmask_asset = HELP.helpButton('Enter a raster rural mask (0 in rural area, 1 in urban area).');
+var help_ruralmask_asset = HELP.helpButton('Enter a raster rural mask (defined such that 0 in rural area, 1 in urban area). This option takes precedence over all other options.');
 population_gbl_data.setDisabled(true);
 population_GEEasset.setDisabled(true);
 var rural_def = ui.Panel([ui.Label('Rural Definition:', GUIPREF.LABEL_T_STYLE),
-    ui.Panel([rural_textbox, ui.Label('inhab./km2', GUIPREF.LABEL_STYLE)],ui.Panel.Layout.Flow('horizontal'), GUIPREF.CNTRL_PANEL_STYLE),
-    ui.Panel([perform_segmentation_ck,helpseg],ui.Panel.Layout.Flow('horizontal'), GUIPREF.CNTRL_PANEL_STYLE)], 
+    ui.Panel([ ruralmask_textbox, help_ruralmask_asset],ui.Panel.Layout.flow('horizontal',true), GUIPREF.CNTRL_PANEL_STYLE),
+    ui.Panel([perform_segmentation_ck,rural_textbox, ui.Label('inhab./km2', GUIPREF.LABEL_STYLE),helpseg],ui.Panel.Layout.Flow('horizontal'), GUIPREF.CNTRL_PANEL_STYLE),
+    ], 
   ui.Panel.Layout.Flow('vertical'), GUIPREF.CNTRL_PANEL_STYLE);
 
 var PopulationPanel = ui.Panel([
       ui.Label( 'Population:', GUIPREF.LABEL_T_STYLE),
       population_gbl_data, 
       population_GEEasset,
-      ui.Panel([ pop_textbox, help_popasset],ui.Panel.Layout.flow('horizontal',true), GUIPREF.CNTRL_PANEL_STYLE),
-      ui.Panel([ ruralmask_textbox, help_ruralmask_asset],ui.Panel.Layout.flow('horizontal',true), GUIPREF.CNTRL_PANEL_STYLE),
+      ui.Panel([ pop_textbox, pop_reso_textbox, help_popasset],ui.Panel.Layout.flow('horizontal',true), GUIPREF.CNTRL_PANEL_STYLE),
       rural_def],
     'flow', GUIPREF.CNTRL_PANEL_STYLE);
 //Indicator definition panel
@@ -936,7 +951,7 @@ var viewPanel = ui.Panel([ck_layeropacity, opacitySlider],
 	ui.Panel.Layout.Flow('horizontal'), GUIPREF.CNTRL_PANEL_STYLE);
 
 //-------------------------------------------------------------
-var helpmap = HELP.helpButton('Update the map with the water layer calculated from the selected dataset, year and month. When Month="All", the yearly average is displayed.');
+var helpmap = HELP.helpButton('Update the map with the road, water, rural mask, population for the selected year and region.');
 var genMapBtn = ui.Button( 'Update Map', DisplayPopLayer, false, GUIPREF.BUTTON_STYLE);
 var mapCntrl = ui.Panel([genMapBtn, helpmap],ui.Panel.Layout.Flow('horizontal'), GUIPREF.CNTRL_PANEL_STYLE);
 //-------------------------------------------------------------
@@ -977,7 +992,7 @@ var gsw_info = ui.Label(
     'https://www.nature.com/articles/nature20584');
 
 var fbai_info = ui.Label(
-    'Facebook AI African Population dataset', 
+    'HRSL: High Resolution Settlement Layer, Facebook AI African Population dataset', 
     {backgroundColor: GUIPREF.BACKCOLOR},
     'https://ai.facebook.com/blog/mapping-the-world-to-help-aid-workers-with-weakly-semi-supervised-learning');
 	
@@ -995,11 +1010,7 @@ var OSM_info = ui.Label('OpenStreetMap data',
   {backgroundColor: GUIPREF.BACKCOLOR}, 
   'http://download.geofabrik.de/');
   
-  var text = ui.Label(
-  'Results based on OpenStreetMap data for Namibia only!',
-  GUIPREF.LABEL_STYLE);
-
-var referencePanel = ui.Panel([text, ui.Label('References and for more information', GUIPREF.LABEL_T_STYLE), 
+var referencePanel = ui.Panel([ui.Label('References and for more information', GUIPREF.LABEL_T_STYLE), 
   gpe_gee_info, GHSL_info, worldPop_info, fbai_info, OSM_info, DEM_info, gsw_info],'flow', GUIPREF.CNTRL_PANEL_STYLE);
 /******************************************************************************************
 * GUI: Screen layout
