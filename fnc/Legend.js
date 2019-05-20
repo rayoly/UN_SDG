@@ -51,7 +51,7 @@ exports.createLegend = function(mapPanel, GUIPREF){
 /******************************************************************************************
  * Set legend function
 *******************************************************************************************/
-exports.setLegend = function(layer, GUIPREF) {
+exports.setLegend = function(layer, GUIPREF, image_band, geometry) {
   // Loop through all the items in a layer's key property,
   // creates the item, and adds it to the key panel.
   exports.keyPanel.clear();
@@ -72,6 +72,16 @@ exports.setLegend = function(layer, GUIPREF) {
           ui.Panel([colorBox, ui.Label(name, GUIPREF.LEGEND_TEXT_STYLE)], ui.Panel.Layout.Flow('horizontal')),{});
     }
   }else{
+    //Calculate Min-Max of the current band to rescale the colorbar
+    if(typeof image_band !== 'undefined'){
+      var theMinMax = image_band.rename('band').reduceRegion({
+        reducer:ee.Reducer.max().combine(ee.Reducer.min(),'',true),
+        geometry:geometry,
+        scale:layer.AreaScale}).getInfo();
+      layer.visParam.min = theMinMax.band_min.toFixed(2);
+      layer.visParam.max = theMinMax.band_max.toFixed(2);
+    }
+    
     // Create the color bar for the legend.
     var colorBar = ui.Thumbnail({
       image: ee.Image.pixelLonLat().select(0),
