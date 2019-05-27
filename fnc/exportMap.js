@@ -40,7 +40,7 @@ exports.exportMap = function(mapPanel, description, scale, poly, export_crs){
     layer = mapPanel.layers().get(n);
     image = layer.get('eeObject');
     layername = layer.get('name');
-  
+    print(typeof image)
     Export.image.toDrive({
         image: image,
         description: description + '_' + layername,

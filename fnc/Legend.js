@@ -86,7 +86,7 @@ exports.setLegend = function(layer, GUIPREF, image_band, geometry) {
     var colorBar = ui.Thumbnail({
       image: ee.Image.pixelLonLat().select(0),
       params: {
-        bbox: [0, 0, layer.visParam.max-layer.visParam.min, 0.1],
+        bbox: [layer.visParam.min, 0, layer.visParam.max, 0.1],
         dimensions: '50x10',
         format: 'png',
         min: layer.visParam.min,

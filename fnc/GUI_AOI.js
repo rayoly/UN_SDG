@@ -76,11 +76,12 @@ exports.createGUI = function(mapPanel, HELP, AOI, GUIPREF, country, region){
     value: locations[index],
     style: GUIPREF.SELECT_STYLE,
     //------------------------------------
-    onChange: function(value) {
-      exports.Location = AOI.CountryLoc[value];
-      exports.countryName = value;
-      exports.ROAD_DATASET = {data:ee.Collection.loadTable('users/rayoly/' + value.toUpperCase() +'_ROADS'), scale:100, coef:1};
-      var propnames = ROAD_DATASET.data.first().propertyNames();
+    
+    onChange: function(country) {
+      exports.Location = AOI.CountryLoc[country];
+      exports.countryName = country;
+      exports.ROAD_DATASET = {data:ee.Collection.loadTable('users/rayoly/' + country.toUpperCase() +'_ROADS'), scale:100, coef:1};
+      var propnames = exports.ROAD_DATASET.data.first().propertyNames();
       var prop = {
         properties: ['code'],
         reducer: ee.Reducer.first()

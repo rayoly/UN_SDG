@@ -25,6 +25,7 @@ var CONFIG = require('users/rayoly/SDG_APP:config.js');
 var AVG = require('users/rayoly/SDG_APP:fnc/Average_fnc.js');
 var AOI = require('users/rayoly/SDG_APP:fnc/AOI.js');
 var GUI_AOI = require('users/rayoly/SDG_APP:fnc/GUI_AOI.js');
+var GUI_DATE = require('users/rayoly/SDG_APP:fnc/GUI_date.js');
 var EXPORT_MAP = require('users/rayoly/SDG_APP:fnc/exportMap.js');
 var GUIPREF = require('users/rayoly/SDG_APP:fnc/GUI_Prefs.js');
 var LEGEND = require('users/rayoly/SDG_APP:fnc/Legend.js');
@@ -226,8 +227,6 @@ var DisplayWaterLayer = function(){
           + '*Permanent=')
           .cat(area_permanent.format('%.2f km2 (')).cat(area_permanent.divide(AOI_area).multiply(100).format('%.2f')).cat('% of AOI)\n*Seasonal=')
           .cat(area_seasonal.format('%.2f km2 (')).cat(area_seasonal.divide(AOI_area).multiply(100).format('%.2f')).cat('% of AOI)');
-    waterInfo = ui.Label(infotxt.getInfo(), {fontWeight: 'bold', color: GUIPREF.TEXTCOLOR, whiteSpace:'pre'});
-    
   }else{
     mapPanel.add(ui.Map.Layer(ImgWaterRegion.select('NDWI'),NDWI_visParam,'NDWI',false));
     area_permanent = ee.Number(waterCount(ImgWaterRegion.select(app.defaultLayer.band), GUI_AOI.Location.polygon, app.defaultLayer.AreaScale, 3)).divide(1e6);
@@ -235,11 +234,13 @@ var DisplayWaterLayer = function(){
     infotxt = ee.String('Extent of water during ' + app.defaultYear +  '/' + app.defaultMonth + ' [' + app.defaultDB + ']:\n'
           + '*Permanent=')
           .cat(area_permanent.format('%.2f km2 or (')).cat(area_permanent.divide(AOI_area).format('%.2f')).cat('% of AOI)');
-          
-    waterInfo = ui.Label(infotxt.getInfo(), {fontWeight: 'bold', color: GUIPREF.TEXTCOLOR});
   }
+  //
+  infotxt.evaluate(function(result) {
+    resultPanel.widgets().set(1, ui.Label(result, {fontWeight: 'bold', color: GUIPREF.TEXTCOLOR, whiteSpace:'pre'}) );
+  });
   //Results Panel
-  resultPanel.widgets().set(1, waterInfo);
+  //resultPanel.widgets().set(1, waterInfo);
   resultPanel.style().set('shown',true);
   resultPanel.style().set('height','120px');
   //Update legend
@@ -467,46 +468,7 @@ var CalcWaterArea = function(){
       return res_year;
     }).flatten();
     //
-    data.area_permanent = result.map(function(r){return ee.Dictionary(r).get('area_permanent');}).getInfo();
-    data.area_seasonal = result.map(function(r){return ee.Dictionary(r).get('area_seasonal');}).getInfo();
-    data.region_area = result.map(function(r){return ee.Dictionary(r).get('region_area');}).getInfo();
-    data.date = result.map(function(r){return ee.Dictionary(r).get('date');}).getInfo();
-    data.region = result.map(function(r){return ee.Dictionary(r).get('region');}).getInfo();
-    //Outline
-    data.Outline = result.map(function(r){return ee.Geometry(ee.Dictionary(r).get('Outline'));}).flatten();
-    data.Outline = data.Outline.slice(1).iterate(function(cur, prev){return ee.Geometry(prev).union(ee.Geometry(cur));},
-      data.Outline.get(0));
-    //Polygon
-    data.Polygon = result.map(function(r){return ee.Geometry(ee.Dictionary(r).get('Polygon'));}).flatten();
-    data.Polygon = data.Polygon.slice(1).iterate(function(cur, prev){return ee.Geometry(prev).union(ee.Geometry(cur));},
-      data.Polygon.get(0));    
-    //Process map time series      
-    if(app.rangeType!=='Regional'){
-      TimeSeriesMap = ee.ImageCollection.fromImages(result.map(function(r){return ee.Dictionary(r).get('Map');}));
-      TimeSeriesMap = TimeSeriesMap.map(
-        function(img){
-          return img.gte(1.0)
-            .rename('water')
-            .copyProperties({source: img});
-        });      
-    }else{
-      TimeSeriesMap = result.map(function(r){return ee.Image(ee.Dictionary(r).get('WaterCoverage')).toFloat();});
-      TimeSeriesMap = ee.ImageCollection.fromImages(TimeSeriesMap);
-    }
-    //5-year average
-    if(app.rangeType=='Yearly'){
-      var gamma2, gamma3;
-      var beta3 = AVG.Average5(data.area_permanent, 2001-1984);
-      var beta2 = AVG.Average5(data.area_seasonal, 2001-1984);      
-      for(i=0;i<data.area_permanent.length;i++){
-          gamma2 = AVG.Average5(data.area_seasonal,i);
-          gamma3 = AVG.Average5(data.area_permanent,i);
-          data.pctchange_seasonal.push( (beta2-gamma2)/beta2*100 );
-          data.pctchange_permanent.push( (beta3-gamma3)/beta3*100 );
-      }
-    }
-    //
-    return {data: data, TimeSeriesMap: TimeSeriesMap};
+    return result;
 };
 
 /****************************************************************************************
@@ -515,205 +477,260 @@ var CalcWaterArea = function(){
 var plotTrend = function(){
   app.defaultLayer = layerProperties[app.defaultDB][app.rangeType];
 
-  var alldata = CalcWaterArea();
-  if( Object.keys(alldata).length===0 ){return;}
-  var areas;
-  var title;
-  var time_range = alldata.data.date;
-
+  var result = CalcWaterArea();
+  //if( Object.keys(alldata).length===0 ){return;}
+  var areas, title;
+  var TimeSeriesMap;
+  var area_permanent, area_seasonal, region_area;
   //clear map
   ClearMap(); 
   //clear result Panel
   ClearresultPanel();
-  
+  resultPanel.style().set('shown',true);
+  //Outline
+  var Outline = result.map(function(r){return ee.Geometry(ee.Dictionary(r).get('Outline'));}).flatten();
+  Outline = Outline.slice(1).iterate(function(cur, prev){return ee.Geometry(prev).union(ee.Geometry(cur));},
+    Outline.get(0));  
   //Update result Panel
   if(app.rangeType=='Regional'){
-    layer_menu.onChange( function(value) {
-        app.defaultLayer.visParam = RegionalTrendMapUpdate(value, app.defaultLayer.visParam,
-          alldata.data.area_permanent, alldata.data.area_seasonal, alldata.data.region_area);
-        //update layer visual param
-        mapPanel.layers().get(0).setVisParams(app.defaultLayer.visParam);
-        //Update legend
-        LEGEND.setLegend(app.defaultLayer, GUIPREF);
-    });
-      
-    app.defaultLayer.visParam = RegionalTrendMapUpdate(layer_menu.getValue(), app.defaultLayer.visParam,
-        alldata.data.area_permanent, alldata.data.area_seasonal, alldata.data.region_area);
-        
-    //Add regional data to map
-    mapPanel.add(ui.Map.Layer( alldata.TimeSeriesMap.mosaic(), 
-      app.defaultLayer.visParam, app.defaultLayer.name,true));    
-
-    //Add outline to map
-    mapPanel.add(ui.Map.Layer(ee.Geometry(alldata.data.Outline), {}, 'Region'));
-    
-    //Create legend
-    LEGEND.setLegend(app.defaultLayer, GUIPREF);
-    
-    //Create summary panel
-    var waterInfo = ui.Label('Extent of water during ' + app.defaultYear +' [' + app.defaultDB + ']:\n');
+    resultPanel.widgets().set(1, ui.Label('Calculating Regional Trend...'));
     //
-    var dataTable = [ ['Region', 'Region Area', 'Permanent Water Area', 'Seasonal WaterArea'] ];
-    var n;
-    for(n=0;n<alldata.data.region.length;n++){
-      dataTable[n+1] = [alldata.data.region[n], alldata.data.region_area[n], alldata.data.area_permanent[n], alldata.data.area_seasonal[n]];
-    }
-    // Define a dictionary of customization options.
-    var options = {
-      title: 'Regional Statistics',
-      vAxis: {title: 'Area (km2)',logScale: true  },
-      legend: {position: 'bottom'},
-      hAxis: {title: 'Region',logScale: false  }
-    };
-    //Create column chart and insert it in the result panel at position 2
-    var chart = ui.Chart(dataTable, 'ColumnChart', options);
-    resultPanel.widgets().set(1, waterInfo);
-    resultPanel.widgets().set(2, chart);
-    resultPanel.style().set('shown',true);
-    resultPanel.style().set('height','400px');
-  }else{
-    if(app.defaultLayer.name=='Year' && app.defaultLayer.trendSeries.length==4){
-      areas = [alldata.data.area_permanent, alldata.data.area_seasonal, alldata.data.pctchange_seasonal, alldata.data.pctchange_permanent];
-    }else if(app.defaultLayer.name=='Year' && length(app.defaultLayer.trendSeries)==2){
-      areas = [alldata.data.area_permanent, [], alldata.data.pctchange_permanent, []];
-    }else{
-      areas = [alldata.data.area_permanent, [], [], []];
-    }
-    //Print title
-    if(app.defaultAssetName.length===0){
-      title = 'Water Area Over Time over ' + GUI_AOI.countryName + '.' + GUI_AOI.regionName +
-          ' during '+ app.defaultYear + '/' + app.defaultMonth;
-    }else{
-      title = 'Water Area Over Time over ' + GUI_AOI.AssetName + '.' + GUI_AOI.RegionID + 
-          ' during '+ app.defaultYear + '/' + app.defaultMonth;
-    }
-  
-    var waterChart = ui.Chart.array.values(areas, 1, time_range)
-        .setChartType('LineChart')
-        .setSeriesNames(app.defaultLayer.trendSeries)
-        .setOptions({
-          title: title,
-          vAxes: {
-            0: { title: 'Area [km2]' },
-            1: {
-              title: '% Area Change (Ref: 2001-2005)',
-              baselineColor: 'transparent'
-              }
-          },
-          hAxis: {title: 'Year', gridlines: {count: 1}},
-          interpolateNulls: true,
-          pointSize: 1,
-          lineWidth: 1,
-          series: {
-            0: {targetAxisIndex: 0},
-            1: {targetAxisIndex: 0},
-            2: {targetAxisIndex: 1},
-            3: {targetAxisIndex: 1}
-          }        
+    TimeSeriesMap = result.map(function(r){return ee.Image(ee.Dictionary(r).get('WaterCoverage')).toFloat();});
+    TimeSeriesMap = ee.ImageCollection.fromImages(TimeSeriesMap);
+    //
+    result.evaluate(function(data, fail){
+      if(typeof fail !== 'undefined'){
+        HELP.show_help_panel('Error during the regional trend calculation:' + undefined);
+      }else{
+        area_permanent = data.map(function(d){return d.area_permanent});
+        area_seasonal = data.map(function(d){return d.area_seasonal});  
+        region_area = data.map(function(d){return d.region_area});        
+        //clear result Panel
+        ClearresultPanel();
+        //
+        layer_menu.onChange( function(value) {
+          app.defaultLayer.visParam = RegionalTrendMapUpdate(value, app.defaultLayer.visParam,
+            area_permanent, area_seasonal, region_area);
+          //update layer visual param
+          mapPanel.layers().get(0).setVisParams(app.defaultLayer.visParam);
+          //Update legend
+          LEGEND.setLegend(app.defaultLayer, GUIPREF);
         });
-    //Results Panel
-    resultPanel.widgets().set(1, waterChart);
-    resultPanel.style().set('shown',true);
-    resultPanel.style().set('height','400px');
+          
+        app.defaultLayer.visParam = RegionalTrendMapUpdate(layer_menu.getValue(), app.defaultLayer.visParam,
+            area_permanent, area_seasonal, region_area);
+            
+        //Add regional data to map
+        mapPanel.add(ui.Map.Layer( TimeSeriesMap.mosaic(), 
+          app.defaultLayer.visParam, app.defaultLayer.name,true));    
     
-    // Visualization and animation parameters.
-    var params = {
-      crs: app.EXPORT_CRS,
-      framesPerSecond: 4,
-      region: alldata.data.Polygon,
-      min: 0.0,
-      max: 1.0,
-      palette: ['silver', 'white', 'cyan', 'blue'],
-      dimensions: 512
-    };
-    resultPanel.widgets().set(2, ui.Thumbnail(alldata.TimeSeriesMap, params));
-    
-    //Add outline to map
-    mapPanel.add(ui.Map.Layer(ee.Geometry(alldata.data.Outline), {}, 'Region'));
-    //water mask
-    var LE = ee.Number( time_range.length );
-    var water_mask = alldata.TimeSeriesMap
-                      .map(function(f) {return f.unmask(0)})
-                      .sum().gt(0.0)
-                      //.reduce(ee.Reducer.anyNonZero())
-                      .rename('water_mask');
-                      
-    //water_mask = ee.Image.constant(1).clip(alldata.Region).rename('water_mask');
-    
-    //apply water mask
-    alldata.TimeSeriesMap = alldata.TimeSeriesMap
-        .map(function(f) {return f.unmask(0).updateMask(water_mask)});
-  
-    //Calculate time series
-    var combi_reducer = ee.Reducer.mean()
-                      .combine(ee.Reducer.minMax(), '', true)
-                      .combine(ee.Reducer.variance(), '', true)
-                      .combine(ee.Reducer.stdDev(), '', true)
-                      .combine(ee.Reducer.percentile([0,25,50,75,99]), '', true)
-                      .combine(ee.Reducer.count(), '', true);
-  
-    var timeseriesmap = alldata.TimeSeriesMap
-        .reduce(combi_reducer)
-        .selfMask();
-  
-    //add mask
-    //timeseriesmap = timeseriesmap.addBands(water_mask);
-    //add permanent
-    timeseriesmap = timeseriesmap.addBands(
-        (timeseriesmap.select('water_count').eq(LE)).gt(0.0)
-        .updateMask(water_mask)
-        .rename('water_permanent')
-      );
-  
-    //add water change band
-    var water_reference,water_exam_range;
-    var water_loss, water_gain;
-    var year = app.defaultYear;
-    var month = app.defaultMonth;
-    
-    if(app.rangeType=='Yearly'){
-      //define reference water level
-      water_reference = alldata.TimeSeriesMap
-          .filterMetadata('year', 'equals',parseInt(year)).first();
-      //gain
-      water_exam_range = alldata.TimeSeriesMap
-          .filterMetadata('year', 'greater_than',parseInt(year));
-    }else{
-      if(month=='All'){month='01';}
-      
-      //define reference water level
-      water_reference = alldata.TimeSeriesMap
-          .filterMetadata('year', 'equals',parseInt(year))
-          .filterMetadata('month', 'equals',parseInt(month)).first();
-      //range of interest to examine variation
-      water_exam_range = alldata.TimeSeriesMap
-          .filterMetadata('year', 'equals',parseInt(year))
-          .filterMetadata('month', 'greater_than',parseInt(month));
-    }
-    water_exam_range = ee.ImageCollection(ee.Algorithms.If(water_exam_range.size(),
-      water_exam_range,
-      ee.ImageCollection.fromImages(ee.List([ee.Image.constant(0)]))));
-
-    //gain
-    water_gain = water_exam_range
-        .map(function(img) {return img.subtract(water_reference)})
-        .max().gt(0).rename('water_gain');
-    //loss
-    water_loss = water_exam_range
-        .map(function(img) {return img.subtract(water_reference)})
-        .min().lt(0).multiply(-1.0).rename('water_loss');
+        //Add outline to map
+        mapPanel.add(ui.Map.Layer(ee.Geometry(Outline), {}, 'Region'));
         
-    var water_change = water_gain.add(water_loss).rename('water_change');
-    
-    timeseriesmap = timeseriesmap.addBands( water_mask.updateMask(water_mask.neq(0)) );
-    timeseriesmap = timeseriesmap.addBands( water_loss.updateMask(water_loss.neq(0)) );
-    timeseriesmap = timeseriesmap.addBands( water_gain.updateMask(water_gain.neq(0)) );
-    timeseriesmap = timeseriesmap.addBands( water_change );
+        //Create legend
+        LEGEND.setLegend(app.defaultLayer, GUIPREF);
+        
+        //Create summary panel
+        var waterInfo = ui.Label('Extent of water during ' + app.defaultYear +' [' + app.defaultDB + ']:\n');
+        //
+        var dataTable = [ ['Region', 'Region Area', 'Permanent Water Area', 'Seasonal WaterArea'] ];
+        var n;
+        for(n=0;n<data.length;n++){
+          dataTable[n+1] = [data[n].region, data[n].region_area, data[n].area_permanent, data[n].area_seasonal];
+        }
+        // Define a dictionary of customization options.
+        var options = {
+          title: 'Regional Statistics',
+          vAxis: {title: 'Area (km2)',logScale: true  },
+          legend: {position: 'bottom'},
+          hAxis: {title: 'Region',logScale: false  }
+        };
+        //Create column chart and insert it in the result panel at position 2
+        var chart = ui.Chart(dataTable, 'ColumnChart', options);
+        resultPanel.widgets().set(1, waterInfo);
+        resultPanel.widgets().set(2, chart);
+        resultPanel.style().set('shown',true);
+        resultPanel.style().set('height','400px');
+      }
+    });
+  }else{ //Yearly or Monthly trend
+    resultPanel.widgets().set(1, ui.Label('Calculating Time Series...'));
     //
-    mapPanel.add(ui.Map.Layer(timeseriesmap, TimeSeriesParam.visParam, TimeSeriesParam.name,true));
-    mapPanel.add(ui.Map.Layer(alldata.TimeSeriesMap, {}, 'Time Series',false));
-    //Create legend
-    LEGEND.setLegend(TimeSeriesParam, GUIPREF);
+    TimeSeriesMap = ee.ImageCollection.fromImages(result.map(function(r){return ee.Dictionary(r).get('Map');}));
+    TimeSeriesMap = TimeSeriesMap.map(
+      function(img){
+        return img.gte(1.0)
+          .rename('water')
+          .copyProperties({source: img});
+    });
+    //
+    result.evaluate(function(data, fail){
+     //clear result Panel
+      ClearresultPanel();
+      if(typeof fail !== 'undefined'){
+        HELP.show_help_panel('Error during the time series calculation:' + undefined);
+      }else{
+        //5-year average
+        area_permanent = data.map(function(d){return d.area_permanent});
+        area_seasonal = data.map(function(d){return d.area_seasonal});
+        var pctchange_seasonal=[];
+        var pctchange_permanent=[];
+        if(app.rangeType=='Yearly'){
+          var gamma2, gamma3;
+          var beta3 = AVG.Average5( area_permanent, 2001-1984);
+          var beta2 = AVG.Average5( area_seasonal , 2001-1984);      
+          for(var i=0;i<area_permanent.length;i++){
+              gamma2 = AVG.Average5(area_seasonal,i);
+              gamma3 = AVG.Average5(area_permanent,i);
+              pctchange_seasonal.push( (beta2-gamma2)/beta2*100 );
+              pctchange_permanent.push( (beta3-gamma3)/beta3*100 );
+          }
+        }
+        //
+        if(app.defaultLayer.name=='Year' && app.defaultLayer.trendSeries.length==4){
+          areas = [area_permanent, area_seasonal, pctchange_seasonal, pctchange_permanent];
+        }else if(app.defaultLayer.name=='Year' && length(app.defaultLayer.trendSeries)==2){
+          areas = [area_permanent, [], pctchange_permanent, []];
+        }else{
+          areas = [area_seasonal, [], [], []];
+        }
+        //Print title
+        if(app.defaultAssetName.length===0){
+          title = 'Water Area Over Time over ' + GUI_AOI.countryName + '.' + GUI_AOI.regionName +
+              ' during '+ app.defaultYear + '/' + app.defaultMonth;
+        }else{
+          title = 'Water Area Over Time over ' + GUI_AOI.AssetName + '.' + GUI_AOI.RegionID + 
+              ' during '+ app.defaultYear + '/' + app.defaultMonth;
+        }
+    
+        var waterChart = ui.Chart.array.values(areas, 1, data.date)
+          .setChartType('LineChart')
+          .setSeriesNames(app.defaultLayer.trendSeries)
+          .setOptions({
+            title: title,
+            vAxes: {
+              0: { title: 'Area [km2]' },
+              1: {
+                title: '% Area Change (Ref: 2001-2005)',
+                baselineColor: 'transparent'
+                }
+            },
+            hAxis: {title: app.defaultLayer.name, gridlines: {count: 1}},
+            interpolateNulls: true,
+            pointSize: 1,
+            lineWidth: 1,
+            series: {
+              0: {targetAxisIndex: 0},
+              1: {targetAxisIndex: 0},
+              2: {targetAxisIndex: 1},
+              3: {targetAxisIndex: 1}
+            }        
+          });
+        //Results Panel
+        resultPanel.widgets().set(1, waterChart);
+        resultPanel.style().set('shown',true);
+        resultPanel.style().set('height','400px');
+      
+        // Visualization and animation parameters.
+        var params = {
+          crs: app.EXPORT_CRS,
+          framesPerSecond: 4,
+          region: data[0].Polygon,
+          min: 0.0,
+          max: 1.0,
+          palette: ['silver', 'white', 'cyan', 'blue'],
+          dimensions: 512
+        };
+        resultPanel.widgets().set(2, ui.Thumbnail(TimeSeriesMap, params));
+      
+        //Add outline to map
+        mapPanel.add(ui.Map.Layer(ee.Geometry(Outline), {}, 'Region'));
+        //water mask
+        var LE = ee.Number( data.length );
+        var water_mask = TimeSeriesMap
+                          .map(function(f) {return f.unmask(0)})
+                          .sum().gt(0.0)
+                          //.reduce(ee.Reducer.anyNonZero())
+                          .rename('water_mask');
+                          
+        //water_mask = ee.Image.constant(1).clip(alldata.Region).rename('water_mask');
+        
+        //apply water mask
+        TimeSeriesMap = TimeSeriesMap
+            .map(function(f) {return f.unmask(0).updateMask(water_mask)});
+      
+        //Calculate time series
+        var combi_reducer = ee.Reducer.mean()
+                          .combine(ee.Reducer.minMax(), '', true)
+                          .combine(ee.Reducer.variance(), '', true)
+                          .combine(ee.Reducer.stdDev(), '', true)
+                          .combine(ee.Reducer.percentile([0,25,50,75,99]), '', true)
+                          .combine(ee.Reducer.count(), '', true);
+      
+        var timeseriesmap = TimeSeriesMap
+            .reduce(combi_reducer)
+            .selfMask();
+    
+        //add mask
+        //timeseriesmap = timeseriesmap.addBands(water_mask);
+        //add permanent
+        timeseriesmap = timeseriesmap.addBands(
+            (timeseriesmap.select('water_count').eq(LE)).gt(0.0)
+            .updateMask(water_mask)
+            .rename('water_permanent')
+          );
+    
+        //add water change band
+        var water_reference,water_exam_range;
+        var water_loss, water_gain;
+        var year = app.defaultYear;
+        var month = app.defaultMonth;
+      
+        if(app.rangeType=='Yearly'){
+          //define reference water level
+          water_reference = TimeSeriesMap
+              .filterMetadata('year', 'equals',parseInt(year)).first();
+          //gain
+          water_exam_range = TimeSeriesMap
+              .filterMetadata('year', 'greater_than',parseInt(year));
+        }else{
+          if(month=='All'){month='01';}
+          
+          //define reference water level
+          water_reference = TimeSeriesMap
+              .filterMetadata('year', 'equals',parseInt(year))
+              .filterMetadata('month', 'equals',parseInt(month)).first();
+          //range of interest to examine variation
+          water_exam_range = TimeSeriesMap
+              .filterMetadata('year', 'equals',parseInt(year))
+              .filterMetadata('month', 'greater_than',parseInt(month));
+        }
+        water_exam_range = ee.ImageCollection(ee.Algorithms.If(water_exam_range.size(),
+          water_exam_range,
+          ee.ImageCollection.fromImages(ee.List([ee.Image.constant(0)]))));
+    
+        //gain
+        water_gain = water_exam_range
+            .map(function(img) {return img.subtract(water_reference)})
+            .max().gt(0).rename('water_gain');
+        //loss
+        water_loss = water_exam_range
+            .map(function(img) {return img.subtract(water_reference)})
+            .min().lt(0).multiply(-1.0).rename('water_loss');
+            
+        var water_change = water_gain.add(water_loss).rename('water_change');
+      
+        timeseriesmap = timeseriesmap.addBands( water_mask.updateMask(water_mask.neq(0)) );
+        timeseriesmap = timeseriesmap.addBands( water_loss.updateMask(water_loss.neq(0)) );
+        timeseriesmap = timeseriesmap.addBands( water_gain.updateMask(water_gain.neq(0)) );
+        timeseriesmap = timeseriesmap.addBands( water_change );
+        //
+        mapPanel.add(ui.Map.Layer(timeseriesmap, TimeSeriesParam.visParam, TimeSeriesParam.name,true));
+        mapPanel.add(ui.Map.Layer(TimeSeriesMap, {}, 'Time Series',false));
+        //Create legend
+        LEGEND.setLegend(TimeSeriesParam, GUIPREF);
+      }
+    });
   }
 };
 
@@ -768,19 +785,14 @@ var resultPanel = ui.Panel([
 /****************************************************************************************
 * Define the pulldown menu.  Changing the pulldown menu changes the displayed year
 *****************************************************************************************/
-var yearSelect = ui.Select({
-  items: Array.apply(null, {length: 39}).map( function(number, index){return (1981+index).toString()}),
-  value: app.defaultLayer.availableYears[1],
-  style: GUIPREF.SELECT_STYLE,
-  onChange: function(year) {
-    app.defaultYear = year;
-  }
-});
-var monthSelect = ui.Select({
-  items: app.availableMonths,
-  value: app.availableMonths[0],
-  style: GUIPREF.SELECT_STYLE,
-  onChange: function(month) {
+//Define year, month lists
+GUI_DATE.YearList = Array.apply(null, {length: 39}).map( function(number, index){return (1981+index).toString()});
+GUI_DATE.MonthList = app.availableMonths;
+//Create GUI
+GUI_DATE.createGUI(mapPanel, HELP, GUIPREF, true, true, false);
+//Set Callbacks
+GUI_DATE.yearSelect.onChange(function(year) {app.defaultYear=year;});
+GUI_DATE.monthSelect.onChange(function(month) {
     app.defaultMonth = month;
     if(app.defaultMonth=='All'){
       app.defaultLayer = layerProperties[app.defaultDB].Yearly;
@@ -789,13 +801,7 @@ var monthSelect = ui.Select({
     }
     LEGEND.setLegend(app.defaultLayer, GUIPREF);
   }
-});
-// Add the select to the toolPanel with some explanatory text.
-var yearPanel = ui.Panel([
-  ui.Label( 'Reference Date (Year, Month):', GUIPREF.LABEL_T_STYLE), 
-  yearSelect, monthSelect],
-  ui.Panel.Layout.flow('horizontal',true), GUIPREF.CNTRL_SUBPANEL_STYLE);
-yearSelect.setValue(app.defaultLayer.availableYears[0]);
+);
 
 /******************************************************************************************
 * GUI: dataset selection.
@@ -813,7 +819,7 @@ var DBSelect = ui.Select({
       app.defaultLayer = layerProperties[app.defaultDB].Monthly;
     }
     //Update year drop down
-    yearSelect.setValue(app.defaultLayer.availableYears[0]);
+    GUI_DATE.yearSelect.setValue(app.defaultLayer.availableYears[0]);
     //Update legend
     LEGEND.setLegend(app.defaultLayer, GUIPREF);
   }
@@ -863,7 +869,7 @@ var ck_layeropacity = ui.Checkbox({
   value: true,
   style: GUIPREF.CKBOX_STYLE,
   onChange: function(value) {
-    var selected = yearSelect.getValue();
+    var selected = GUI_DATE.yearSelect.getValue();
     // Loop through the layers in the mapPanel. For each layer,
     // if the layer's name is the same as the name selected in the layer
     // pulldown, set the visibility of the layer equal to the value of the
@@ -873,7 +879,7 @@ var ck_layeropacity = ui.Checkbox({
     });
     // If the checkbox is on, the layer pulldown should be enabled, otherwise,
     // it's disabled.
-    yearSelect.setDisabled(!value);
+    GUI_DATE.yearSelect.setDisabled(!value);
   }
 });
 
@@ -958,7 +964,7 @@ var referencePanel = ui.Panel([ui.Label('For more information:', GUIPREF.LABEL_T
 //result panel
 
 //Tool panel
-toolPanel.add(ui.Panel([DBPanel, yearPanel, LocationPanel,
+toolPanel.add(ui.Panel([DBPanel, GUI_DATE.datePanel, LocationPanel,
 	trendPanel, exportPanel, viewPanel,
 	mailPanel,
 	referencePanel],

@@ -29,7 +29,8 @@ var GUIPREF = require('users/rayoly/SDG_APP:fnc/GUI_Prefs.js');
 var LEGEND = require('users/rayoly/SDG_APP:fnc/Legend.js');
 var HELP = require('users/rayoly/SDG_APP:fnc/helpBox.js');
 var GUI_AOI = require('users/rayoly/SDG_APP:fnc/GUI_AOI.js');
-
+var GUI_DATE = require('users/rayoly/SDG_APP:fnc/GUI_date.js');
+var MODEL_POP = require('users/rayoly/SDG_APP:fnc/MODEL_Pop.js');
 /************************************************************************************
  * Configure layers and locations
  ************************************************************************************/
@@ -39,26 +40,6 @@ var WATER_DATASET = {data:ee.ImageCollection('JRC/GSW1_0/YearlyHistory'), rural_
 var CITYACCESS_DATASET = {data:ee.Image('Oxford/MAP/accessibility_to_cities_2015_v1_0'), rural_mask:[], scale:1000, coef:1};//30 arcsec
 //DEM
 var DEM_DATASET = {data:ee.Image('CGIAR/SRTM90_V4'), scale:90, coef:1};
-//Population dataset
-//GHSL: Global Human Settlement Layers, Population Grid 1975-1990-2000-2015 (P2016)
-//Dataset from facebook, ingested in asset population_AF_2018-10-01: https://ai.facebook.com/blog/mapping-the-world-to-help-aid-workers-with-weakly-semi-supervised-learning/
-//https://data.humdata.org/dataset/highresolutionpopulationdensitymaps
-
-var POP = { GHSL: {data:ee.ImageCollection('JRC/GHSL/P2016/POP_GPW_GLOBE_V1'), scale: 250, coef:1}, //250m resolution
-            WORLDPOP: {data:ee.ImageCollection("WorldPop/POP"), rural_mask:[], scale: 100, coef:1},//100x100, 3arcsec
-            GPW: {data:ee.ImageCollection("CIESIN/GPWv4/population-count"), scale: 1000, coef:1}, //1000x1000, 30arcsec
-            HRSL: {data:ee.ImageCollection.fromImages(ee.List([ee.Image('users/rayoly/population_AF_2018-10-01')
-              .set('system:time_start',ee.Date.fromYMD(2018, 3, 1 ).millis())
-              .set('system:time_end',ee.Date.fromYMD(2018, 12, 31 ).millis())])),	scale: 30, coef:1}, //1 arcsec=30m
-            };
-
-var empty_mask = ee.ImageCollection([ee.Image([])])
-              .set('system:time_start',ee.Date.fromYMD(1990, 3, 1 ).millis())
-              .set('system:time_end',ee.Date.fromYMD(2030, 12, 31 ).millis());
-var RURALMASK = ee.Dictionary({GHSL: ee.Dictionary({data:ee.ImageCollection('JRC/GHSL/P2016/SMOD_POP_GLOBE_V1'), scale: 1000, coef:1}),
-                 WORLDPOP: ee.Dictionary({data:empty_mask, scale:1, coef:1}),
-                 GPW: ee.Dictionary({data:empty_mask, scale:1, coef:1}),
-                 HRSL: ee.Dictionary({data:empty_mask, scale:1, coef:1})});
 
 //Use dataset USDOS LSIB 2017
 //var COUNTRY_DATASET = ee.FeatureCollection('USDOS/LSIB/2017');
@@ -126,69 +107,7 @@ var ClearresultPanel = function(){
   }
   resultPanel.style().set('shown',false);
 }
-/******************************************************************************
- * Calculate Rural Masl
-*******************************************************************************/
-var calculateRuralMask = function(popmap, Polygon){
-  
-  var map_scale = popmap.get('scale');
-  popmap = popmap/*.clip(Polygon)*/.rename('population_count');
-  popmap = popmap.addBands(ee.Image.pixelArea().clip(Polygon).rename('area'));
-  //calculate clusters
-  var urban_cluster_snic = ee.Algorithms.Image.Segmentation.SNIC({
-    image:popmap,
-    size: ee.Number(app.SNIC_size).divide(map_scale).add(1).round(),
-    compactness:app.SNIC_compactness,//value ok
-    connectivity:8}); //no seeds, results appears worse
-  var density = urban_cluster_snic.select('population_count_mean')
-    .divide(urban_cluster_snic.select('area_mean')).rename('density');
-  // Define a kernel.
- //var kernel = ee.Kernel.circle({radius: 100, units:'meters'});
-  //remove value with density>300 inhab/km2 = 0.0003 inhab/m2
-  return density.lte(app.defaultMaxRuralDensity/1000000.0)
-    //close filter
-   //.focal_min({kernel: kernel, iterations: 2})
-   //.focal_max({kernel: kernel, iterations: 2})
-  .set('source','SNIC');
-};
-/******************************************************************************
- * Extract Rural mask from GHSL
-*******************************************************************************/
-var getRuralMask = function(dateStart, dateEnd, Popmap, Polygon, DB_name){
 
-  DB_name = 'GHSL';
-  var rural_dict = ee.Dictionary(RURALMASK.get(DB_name)).get('data');
-  rural_dict = ee.ImageCollection(rural_dict).filter(ee.Filter.date(dateStart, dateEnd));
-  rural_dict = ee.Image( ee.Algorithms.If(rural_dict.size(),
-        rural_dict.first().set('source',DB_name), 
-        ee.Image.constant(0).set('source','No Rural Mask')) );
-
-  var settlement = ee.Image( ee.Algorithms.If(ee.String(app.defaultRuralAsset).length(),
-    ee.Image(app.defaultRuralAsset).unmask().eq(0).selfMask().set('source','GEEasset'),
-    rural_dict) );
-  
-  return settlement.clip(Polygon).lte(1.0).copyProperties(settlement);
-};
-
-/******************************************************************************
- * Calculate Rural Mask. Rural = non Urban = less than 300inhab per km2
-*******************************************************************************/
-var CalcRuralMask = function(popmap, poly, dateStart, dateEnd){
-  var band_name = ee.String(popmap.bandNames().get(0)).toUpperCase();
-  
-  var condition = ee.Number(app.performSegmentation).eq(0);
-
-  //Return the most appropriate mask
-  var rural_mask = ee.Image(ee.Image( ee.Algorithms.If( condition,
-      getRuralMask(dateStart, dateEnd, popmap, poly, band_name), 
-      calculateRuralMask(popmap, poly) ))
-    .rename(band_name)
-    .copyProperties(popmap));
-    
-  return rural_mask.updateMask(rural_mask.gt(0))
-    .copyProperties(popmap)
-    .copyProperties(rural_mask);//Mask 1's as they means no change to the population distribution
-};
 /******************************************************************************
  * 
 *******************************************************************************/
@@ -207,7 +126,7 @@ var CalcRAI = function(Year, CountryAbbr, lRegion){
     yearRange = [app.defaultYear];
     regionRange = lRegion;//app.RegionLst.slice(1);//skip the first "region" which is "all"
   }else{
-    HELP.show_help_panel('Incorrect Location/Trend mode combination!');
+    HELP.show_help_panel('Incorrect Location/Trend mode combination! Regional trend cannot be performed with an asset.');
     return {};	
   }
   //LOOP
@@ -235,6 +154,10 @@ var CalcRAI = function(Year, CountryAbbr, lRegion){
   }else{
     geeAssetPop = ee.Image.constant(0).set('scale',100000,'database','undef','name','undef').rename('undef');
   }
+  //Set rural parameters
+  MODEL_POP.setSNIC(app.SNIC_size, app.SNIC_compactness);
+  MODEL_POP.setMaxRuralDensity(app.defaultMaxRuralDensity);
+  MODEL_POP.setRuralAsset(app.defaultRuralAsset);
   //
   var zeroImg = ee.Image.constant(0);//.selfMask();
   var oneImg  = ee.Image.constant(1);
@@ -270,68 +193,15 @@ var CalcRAI = function(Year, CountryAbbr, lRegion){
       * or
       *   WorldPop, Landscan of OakRidge, GRUMP
       ---------------------------------------------------------*/
-      var PopMap;
-      //-- GHSL 
-      var ghslPop = POP.GHSL.data
-        .filterBounds(poly)
-        .filter(ee.Filter.date( DateStart, DateEnd ));
-      ghslPop = ee.Image(ee.Algorithms.If( ghslPop.size(),
-          ghslPop.first().multiply(POP.GHSL.coef).set('scale', POP.GHSL.scale), 
-          zeroImg.set('scale',10000) ))
-        .clip(poly)
-        .set('database','GHSL','name','GHSL')
-        .rename('GHSL');//band name must match <database>       
-
-      //-- WorldPop
-      var worldPop = POP.WORLDPOP.data
-        .filterBounds(poly)
-        .filter(ee.Filter.eq('country',CountryAbbr))
-        .filter(ee.Filter.eq('year',ee.Number.parse(year)))
-        .filter(ee.Filter.date( DateStart, DateEnd ))
-        .filter(ee.Filter.eq('UNadj','no'));
-      worldPop = ee.Image(ee.Algorithms.If( worldPop.size(),
-          worldPop.first().multiply(POP.WORLDPOP.coef).set('scale', POP.WORLDPOP.scale), 
-          zeroImg.set('scale',10000) ))
-        .clip(poly)
-        .set('database','worldPop','name','World Pop')
-        .rename('worldPop');//band name must match <database>       
-        
-      //-- GPW
-      var gpwPop = POP.GPW.data
-        .filter(ee.Filter.date( DateStart, DateEnd ))
-        .filterBounds(poly);
-      gpwPop = ee.Image(ee.Algorithms.If( gpwPop.size(),
-          gpwPop.first().multiply( POP.GPW.coef).set('scale', POP.GPW.scale), 
-          zeroImg.set('scale',10000) ))
-        .clip(poly)
-        .set('database','gpw','name','GPW')
-        .rename('gpw');//band name must match <database>       
-        
-      //-- Facebook Pop / HRSL
-       var HRSL_Pop = POP.HRSL.data
-        .filterBounds(poly)
-        .filter(ee.Filter.date( DateStart, DateEnd ));
-      HRSL_Pop = ee.Image(ee.Algorithms.If( HRSL_Pop.size(),
-          HRSL_Pop.first().multiply(POP.HRSL.coef).set('scale', POP.HRSL.scale), 
-          zeroImg.set('scale',10000) ))
-        //.multiply(ee.Image.pixelArea())
-        .clip(poly)
-        .set('database','hrsl','name','HRSL')
-        .rename('hrsl');//band name must match <database>        
-
-      /*--------------------------------------------------------
-      * Image collection of all population dataset
-      *   update the mask
-      ---------------------------------------------------------*/
-      PopMap = ee.ImageCollection.fromImages( ee.Algorithms.If(useGlobalDataset,
-        [worldPop, gpwPop, ghslPop, HRSL_Pop],
-        [geeAssetPop]));
+      var PopMap = MODEL_POP.getPop(DateStart, DateEnd, poly, year, CountryAbbr, useGlobalDataset,geeAssetPop);
 
       /*--------------------------------------------------------
       * Retrieve Settlement dataset to identify rural areas
       ---------------------------------------------------------*/
       //Calculate Rural Mask for each image population
-      var RuralMask = PopMap.map( function(img){  return CalcRuralMask(img, poly, DateStart, DateEnd);} );
+      var RuralMask = PopMap.map( function(img){  
+        return MODEL_POP.CalcRuralMask(img, poly, DateStart, DateEnd, app.performSegmentation);
+      } );
 
       /*--------------------------------------------------------
       * City Access
@@ -466,13 +336,6 @@ var DisplayPopLayer = function(){
   var alldata = CalcRAI([app.defaultYear], countryAbbr, [GUI_AOI.regionName]);
   if( Object.keys(alldata).length===0 ){return;}
   var data = ee.Dictionary(alldata.data.get(0));
-  //retrieve calculated data
-  var time_range = data.get('year').getInfo();
-  var DBlst = data.get('DB_description').getInfo();
-  var total_stats = data.get('total_stats').getInfo();
-  var rural_stats = data.get('rural_stats').getInfo();
-  var pop_within_dist = data.get('pop_within_dist').getInfo();
-  var ruralSource = data.get('ruralSource').getInfo();
 
   /*------------------------------------------------------
   * Plots MAPS
@@ -522,41 +385,49 @@ var DisplayPopLayer = function(){
   }
   //Generate information text 
   var text1='', text2='', text3='';
-  for(var key in DBlst){
-    if(total_stats[key]>0){
-      text1 = text1 + '* ' + DBlst[key] + ': ' + (total_stats[key]).toFixed(0) + '\n';
-      
-      var p1 = 100.0*(rural_stats[key])/(total_stats[key]);
-      text2 = text2 + '* ' + DBlst[key] + ': ' + (rural_stats[key]).toFixed(0) + ' inhab. (' + 
-        p1.toFixed(2) + '% of the total pop.) ' + ' [' + ruralSource[key] + ']\n';     
-          
-      if(rural_stats[key]>0){
-        var r1 = 100.0*(pop_within_dist[key])/(rural_stats[key]);
-        text3 = text3 + '* ' + DBlst[key] + ': ' + (pop_within_dist[key]).toFixed(0) + ' inhab. (' +
-          r1.toFixed(2) + '% of the rural pop.) \n';
+  //print panel
+  resultPanel.style().set('shown',true);
+  resultPanel.widgets().set(1, ui.Label('Computing...'));
+  //
+  data.evaluate(function(result, fail){
+    //clear panel
+    resultPanel.clear();
+    //
+    for(var key in result.DB_description){
+      if(result.total_stats[key]>0){
+        text1 = text1 + '* ' + result.DB_description[key] + ': ' + (result.total_stats[key]).toFixed(0) + ' inhab.\n';
+        
+        var p1 = 100.0*(result.rural_stats[key])/(result.total_stats[key]);
+        text2 = text2 + '* ' + result.DB_description[key] + ': ' + (result.rural_stats[key]).toFixed(0) + ' inhab. (' + 
+          p1.toFixed(2) + '% of the total pop.) ' + ' [' + result.ruralSource[key] + ']\n';     
+            
+        if(result.rural_stats[key]>0){
+          var r1 = 100.0*(result.pop_within_dist[key])/(result.rural_stats[key]);
+          text3 = text3 + '* ' + result.DB_description[key] + ': ' + (result.pop_within_dist[key]).toFixed(0) + ' inhab. (' +
+            r1.toFixed(2) + '% of the rural pop.) \n';
+        }
       }
     }
-  }
-  //------------------------------------------------------------- Total population stat
-  resultPanel.widgets().set(1,
-    ui.Label('Global Population Count in ' + ROI + ' in ' + time_range + ': ', 
-    {fontWeight: 'bold', color:GUIPREF.TEXTCOLOR}));    
-  resultPanel.widgets().set(2,ui.Label(text1,{color:GUIPREF.TEXTCOLOR, whiteSpace:'pre'}));
-    
-  //------------------------------------------------------------- Rural population stat
-  resultPanel.widgets().set(3, ui.Label(
-    'Rural Population Count in ' + ROI + ' in ' + time_range + ': ', 
-    {fontWeight: 'bold', color:GUIPREF.TEXTCOLOR}) );
-  resultPanel.widgets().set(4,ui.Label(text2,{color:GUIPREF.TEXTCOLOR, whiteSpace:'pre'}));
-  
-  //------------------------------------------------------------- RAI
-  if(text3.length>0){
-    resultPanel.widgets().set(5,ui.Label(
-      'Proportion living within ' + (app.defaultDist2Road/1000) + 'km of a road: ',
-      {fontWeight: 'bold', color:GUIPREF.TEXTCOLOR}));  
-    resultPanel.widgets().set(6,ui.Label(text3,{color:GUIPREF.TEXTCOLOR, whiteSpace:'pre'}));
-  }
-  
+    //------------------------------------------------------------- Total population stat
+    resultPanel.widgets().set(1,
+      ui.Label('Global Population Count in ' + ROI + ' in ' + result.year + ': ', 
+      {fontWeight: 'bold', color:GUIPREF.TEXTCOLOR}));    
+    resultPanel.widgets().set(2,ui.Label(text1,{color:GUIPREF.TEXTCOLOR, whiteSpace:'pre'}));
+
+    //------------------------------------------------------------- Rural population stat
+    resultPanel.widgets().set(3, ui.Label(
+      'Rural Population Count in ' + ROI + ' in ' + result.year + ': ', 
+      {fontWeight: 'bold', color:GUIPREF.TEXTCOLOR}) );
+    resultPanel.widgets().set(4,ui.Label(text2,{color:GUIPREF.TEXTCOLOR, whiteSpace:'pre'}));
+
+    //------------------------------------------------------------- RAI
+    if(text3.length>0){
+      resultPanel.widgets().set(5,ui.Label(
+        'Proportion living within ' + (app.defaultDist2Road/1000) + 'km of a road: ',
+        {fontWeight: 'bold', color:GUIPREF.TEXTCOLOR}));  
+      resultPanel.widgets().set(6,ui.Label(text3,{color:GUIPREF.TEXTCOLOR, whiteSpace:'pre'}));
+    }
+  });
   resultPanel.style().set('height','350px','width','500px');
   resultPanel.style().set('shown',true);
 };
@@ -600,7 +471,7 @@ var plotTrend = function(){
   //
   var options;
   var dataTable;
-  var i, key;
+  var i;
   //
   var alldata = CalcRAI(app.availableYears, AOI.countryCode(GUI_AOI.countryName), 
     GUI_AOI.RegionLst.slice(1));//skip the first "region" which is "all"
@@ -610,109 +481,111 @@ var plotTrend = function(){
   Outline = Outline.slice(1).iterate(function(cur, prev){return ee.Geometry(prev).union(ee.Geometry(cur));},
     Outline.get(0));  
 
-  //RAI
-  var RAI = alldata.data.map(function(d){return ee.Dictionary(d).get('RAI')}).getInfo();
-  //Total Pop
-  var total_stats = alldata.data.map(function(d){return ee.Dictionary(d).get('total_stats')}).getInfo();  
-  //Rural Pop
-  var rural_stats = alldata.data.map(function(d){return ee.Dictionary(d).get('rural_stats')}).getInfo();  
-  //get list of population database used
-  var DBlst = alldata.data.map(function(d){return ee.Dictionary(d).get('DB_description')}).getInfo();
-  //Get list of regions
-  var RegionLst = alldata.data.map(function(d){return ee.Dictionary(d).get('region')}).getInfo();
+  //print panel
+  resultPanel.style().set('shown',true);
+  resultPanel.widgets().set(1, ui.Label('Computing trends...'));
   //
-  if(app.rangeType=='Yearly' || GUI_AOI.selectedGEEAsset()===true){
-    //Create series name
-    dataTable = [ ['Year'] ];	
-    i=1;
-    for(key in DBlst[0]){
-      dataTable[0][i] = DBlst[0][key];
-      i++;
-    }
-    //Total Population
-    var PopArray = Dict2Array(app.availableYears, total_stats, dataTable);
-    options = {
-      title: 'Total Population',
-      vAxis: {title: 'Nb. Inhabitants',logScale: false  },
-      legend: {position: 'bottom'},
-      hAxis: {title: 'Year',logScale: false  }
-    };
-    var PopChart = ui.Chart(PopArray, 'ColumnChart', options);
-    resultPanel.widgets().set(1, PopChart);
-
-    //Rural population
-    var RurArray = Dict2Array(app.availableYears, rural_stats, dataTable);
-    options = {
-      title: 'Rural Population',
-      vAxis: {title: 'Nb. Inhabitants',logScale: false  },
-      legend: {position: 'bottom'},
-      hAxis: {title: 'Year',logScale: false  }
-    };
-    var RurChart = ui.Chart(RurArray, 'ColumnChart', options);
-    resultPanel.widgets().set(2, RurChart);
-
-    //RAI
-    var RAIArray = Dict2Array(app.availableYears, RAI, dataTable);
-    options = {
-      title: 'Rural Access Index',
-      vAxis: {title: 'RAI (%)',logScale: false  },
-      legend: {position: 'bottom'},
-      hAxis: {title: 'Year',logScale: false  }
-    };
-    var RAIChart = ui.Chart(RAIArray, 'ColumnChart', options);
-    resultPanel.widgets().set(3, RAIChart);
-    
-    // Visualization and animation parameters.
-    var params = {
-      crs: app.EXPORT_CRS,
-      framesPerSecond: 4,
-      region: ee.Dictionary(alldata.data.get(0)).get('BoundaryPolygon'),
-      min: 0.0,
-      max: 1.0,
-      palette: ['silver', 'white', 'cyan', 'blue'],
-      dimensions: 512
-    };
-    resultPanel.widgets().set(4, ui.Thumbnail(alldata.TimeSeriesMap, params));
-    //---------------------------------------------------
-    resultPanel.style().set('shown',true);
-    resultPanel.style().set('height','500px');
-  }else if(app.rangeType=='Regional' && GUI_AOI.selectedGEEAsset()===false){
-    //Plot RAI per region on the map
-    app.Mosaic_layer.visParam.bands = Object.keys(DBlst[0])[0];
-    mapPanel.add(ui.Map.Layer( alldata.TimeSeriesMap.mosaic(), 
-      app.Mosaic_layer.visParam, app.Mosaic_layer.name, true));
+  alldata.data.evaluate( function(data){
+    //Clear Panel
+    resultPanel.clear();
+    var RAI, total_stats, rural_stats;
+    if(app.rangeType=='Yearly' || GUI_AOI.selectedGEEAsset()===true){
+      RAI = data.map(function(d){return d.RAI});
+      total_stats = data.map(function(d){return d.total_stats});
+      rural_stats = data.map(function(d){return d.rural_stats});
+      //Create series name
+      dataTable = [ ['Year'] ];	
+      i=1;
+      for(var key in data[0].DB_description){
+        dataTable[0][i] = data[0].DB_description[key];
+        i++;
+      }
+      //Total Population
+      var PopArray = Dict2Array(app.availableYears, total_stats, dataTable);
+      options = {
+        title: 'Total Population',
+        vAxis: {title: 'Nb. Inhabitants',logScale: false  },
+        legend: {position: 'bottom'},
+        hAxis: {title: 'Year',logScale: false  }
+      };
+      var PopChart = ui.Chart(PopArray, 'ColumnChart', options);
+      resultPanel.widgets().set(1, PopChart);
+  
+      //Rural population
+      var RurArray = Dict2Array(app.availableYears, rural_stats, dataTable);
+      options = {
+        title: 'Rural Population',
+        vAxis: {title: 'Nb. Inhabitants',logScale: false  },
+        legend: {position: 'bottom'},
+        hAxis: {title: 'Year',logScale: false  }
+      };
+      var RurChart = ui.Chart(RurArray, 'ColumnChart', options);
+      resultPanel.widgets().set(2, RurChart);
+  
+      //RAI
+      var RAIArray = Dict2Array(app.availableYears,  RAI, dataTable);
+      options = {
+        title: 'Rural Access Index',
+        vAxis: {title: 'RAI (%)',logScale: false  },
+        legend: {position: 'bottom'},
+        hAxis: {title: 'Year',logScale: false  }
+      };
+      var RAIChart = ui.Chart(RAIArray, 'ColumnChart', options);
+      resultPanel.widgets().set(3, RAIChart);
+      
+      // Visualization and animation parameters.
+      var params = {
+        crs: app.EXPORT_CRS,
+        framesPerSecond: 4,
+        region: ee.Dictionary(alldata.data.get(0)).get('BoundaryPolygon'),
+        min: 0.0,
+        max: 1.0,
+        palette: ['silver', 'white', 'cyan', 'blue'],
+        dimensions: 512
+      };
+      resultPanel.widgets().set(4, ui.Thumbnail(alldata.TimeSeriesMap, params));
+      //---------------------------------------------------
+      resultPanel.style().set('shown',true);
+      resultPanel.style().set('height','500px');
+    }else if(app.rangeType=='Regional' && GUI_AOI.selectedGEEAsset()===false){
+      RAI = data.map(function(d){return d.RAI});
+      total_stats = data.map(function(d){return d.total_stats});
+      rural_stats = data.map(function(d){return d.rural_stats});
+      
+      //Plot RAI per region on the map
+      app.Mosaic_layer.visParam.bands = Object.keys(data[0].DB_description)[0];
+      mapPanel.add(ui.Map.Layer( alldata.TimeSeriesMap.mosaic(), 
+        app.Mosaic_layer.visParam, app.Mosaic_layer.name, true));
+        
       //
-    mapPanel.add(ui.Map.Layer( alldata.TimeSeriesMap, 
-      {}, 'Regional RAI', false));      
-    
-    //Create legend
-    LEGEND.setLegend(app.Mosaic_layer, GUIPREF);
-
-    //Create summary panel
-    var Info = ui.Label('Regional Road access statistics during ' + app.defaultYear + ':\n');
-    //Create series name
-    dataTable = [ ['Region'] ];	
-    i=1;
-    for(key in DBlst[0]){
-      dataTable[0][i] = DBlst[0][key];
-      i++;
+      mapPanel.add(ui.Map.Layer( alldata.TimeSeriesMap, {}, 'Regional RAI', false));      
+      
+      //Create legend
+      LEGEND.setLegend(app.Mosaic_layer, GUIPREF);
+      //Create series name
+      dataTable = [ ['Region'] ];	
+      i=1;
+      for(key in data[0].DB_description){
+        dataTable[0][i] = data[0].DB_description[key];
+        i++;
+      }
+      var RegionalRAIArray = Dict2Array(data.map(function(d){return d.region}), RAI, dataTable);
+      
+      // Define a dictionary of customization options.
+      options = {
+        title: 'Regional Statistics',
+        vAxis: {title: 'RAI (%)',logScale: false  },
+        legend: {position: 'bottom'},
+        hAxis: {title: 'Region',logScale: false  }
+      };
+      //
+      var chart = ui.Chart(RegionalRAIArray, 'ColumnChart', options);
+      resultPanel.widgets().set(1, ui.Label('Regional Road access statistics during ' + app.defaultYear + ':\n'));
+      resultPanel.widgets().set(2, chart);
+      resultPanel.style().set('shown',true);
+      resultPanel.style().set('height','300px');
     }
-    var RegionalRAIArray = Dict2Array(RegionLst, RAI, dataTable);
-    
-    // Define a dictionary of customization options.
-    options = {
-      title: 'Regional Statistics',
-      vAxis: {title: 'RAI (%)',logScale: false  },
-      legend: {position: 'bottom'},
-      hAxis: {title: 'Region',logScale: false  }
-    };
-    //
-    var chart = ui.Chart(RegionalRAIArray, 'ColumnChart', options);
-    resultPanel.widgets().set(1, Info);
-    resultPanel.widgets().set(2, chart);
-    resultPanel.style().set('shown',true);
-    resultPanel.style().set('height','300px');
-  }
+  });
   //Add region outline to map  
   mapPanel.add(ui.Map.Layer(ee.Geometry(Outline), {}, 'Region'));
 };
@@ -767,21 +640,16 @@ resultPanel.add(resultPanelTitle);
 /****************************************************************************************
 * Define the pulldown menu.  Changing the pulldown menu changes the displayed year
 *****************************************************************************************/
-var yearSelect = ui.Select({
-  items: app.availableYears,
-  value: app.availableYears[0],
-  style: GUIPREF.SELECT_STYLE,
-  onChange: function(year) {
-    app.defaultYear = year;
-  }
-});
-
-// Add the select to the toolPanel with some explanatory text.
-var yearPanel = ui.Panel(
-  [ui.Label( 'Period:', GUIPREF.LABEL_T_STYLE),
-  ui.Panel([ui.Label('Year:', GUIPREF.LABEL_STYLE),yearSelect],
-  ui.Panel.Layout.flow('horizontal',true), GUIPREF.CNTRL_PANEL_STYLE)],
-  ui.Panel.Layout.flow('horizontal',true), GUIPREF.CNTRL_PANEL_STYLE);
+/****************************************************************************************
+* Define the pulldown menu.  Changing the pulldown menu changes the displayed year
+*****************************************************************************************/
+//Define year, month lists
+GUI_DATE.YearList = app.availableYears;
+//Create GUI
+GUI_DATE.createGUI(mapPanel, HELP, GUIPREF, true, false, false);
+//Set Callbacks
+GUI_DATE.yearSelect.onChange(function(year) {app.defaultYear=year;});
+GUI_DATE.yearSelect.setValue(app.defaultYear);
 
 /******************************************************************************************
 * GUI: Selection of a predefined shape.
@@ -791,7 +659,6 @@ var LocationPanel = GUI_AOI.LocationPanel;
 mapPanel.centerObject(ee.Geometry(GUI_AOI.Location.polygon));
 GUI_AOI.setAsset(app.defaultAssetName,  app.defaultRegionID);
 
-yearSelect.setValue(app.defaultYear);
 /****************************************************************************************
 * Setting of the definition of the indicator
 * distance to road
@@ -1018,7 +885,7 @@ var referencePanel = ui.Panel([ui.Label('References and for more information', G
 //result panel
 
 //Tool panel
-toolPanel.add(ui.Panel([ yearPanel, LocationPanel,
+toolPanel.add(ui.Panel([ GUI_DATE.datePanel, LocationPanel,
 	DistPanel,
 	PopulationPanel,
 	trendPanel,exportPanel,
