@@ -405,7 +405,7 @@ var plotTrend = function(){
     //
     result.evaluate(function(data, fail){
       if(typeof fail !== 'undefined'){
-        HELP.show_help_panel('Error during the regional trend calculation:' + undefined);
+        HELP.show_help_panel('Error during the regional trend calculation:' + fail);
       }else{
         area_permanent = data.map(function(d){return d.area_permanent});
         area_seasonal = data.map(function(d){return d.area_seasonal});  

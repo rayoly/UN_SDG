@@ -44,18 +44,29 @@ var useRoad = false;
 var retrieve_road_network = function(mapPanel, AOI, country, region, assetname, regionid){
   var poly = AOI.GetClippingPolygon(country, region, assetname, regionid).polygon; 
   var road_asset = 'users/rayoly/' + country.toUpperCase() +'_ROADS';
-  print('Loading road asset:' + road_asset);      
-  exports.ROAD_DATASET = {data:ee.Collection.loadTable(road_asset), scale:100, coef:1};
-  var propnames = exports.ROAD_DATASET.data.first().propertyNames();
-  var prop = {
-    properties: ['code'],
-    reducer: ee.Reducer.first()
-  };
-  //mapPanel.add(ui.Map.Layer(ee.Geometry(poly), {}, 'Region'));
-  exports.ROAD_DATASET.data = ee.Image(exports.ROAD_DATASET.data
-    .filter(ee.Filter.bounds(poly))
-    .filter(ee.Filter.notNull(propnames))
-    .reduceToImage(prop));
+  print('Loading road asset:' + road_asset); 
+  
+  var road_data;
+  ee.Collection.loadTable(road_asset).first().evaluate( function(f, fail){
+    if(typeof fail !== 'undefined'){
+      print('Road dataset not found!');
+      road_data = ee.FeatureCollection([ee.Geometry.LineString([0,0,0.1,0.1])]).set('code',1);
+    }else{
+      road_data = ee.Collection.loadTable(road_asset);
+    }
+    //
+    exports.ROAD_DATASET = {data:road_data, scale:100, coef:1};
+    var propnames = exports.ROAD_DATASET.data.first().propertyNames();
+    var prop = {
+      properties: ['code'],
+      reducer: ee.Reducer.first()
+    };
+    //mapPanel.add(ui.Map.Layer(ee.Geometry(poly), {}, 'Region'));
+    exports.ROAD_DATASET.data = ee.Image(exports.ROAD_DATASET.data
+      .filter(ee.Filter.bounds(poly))
+      .filter(ee.Filter.notNull(propnames))
+      .reduceToImage(prop));
+  });
 };
 /****************************************************************************************
 * Define panel for selecting the AOI

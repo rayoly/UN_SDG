@@ -390,42 +390,47 @@ var DisplayPopLayer = function(){
   resultPanel.widgets().set(1, ui.Label('Computing...'));
   //
   data.evaluate(function(result, fail){
-    //clear panel
-    resultPanel.clear();
-    //
-    for(var key in result.DB_description){
-      if(result.total_stats[key]>0){
-        text1 = text1 + '* ' + result.DB_description[key] + ': ' + (result.total_stats[key]).toFixed(0) + ' inhab.\n';
-        
-        var p1 = 100.0*(result.rural_stats[key])/(result.total_stats[key]);
-        text2 = text2 + '* ' + result.DB_description[key] + ': ' + (result.rural_stats[key]).toFixed(0) + ' inhab. (' + 
-          p1.toFixed(2) + '% of the total pop.) ' + ' [' + result.ruralSource[key] + ']\n';     
-            
-        if(result.rural_stats[key]>0){
-          var r1 = 100.0*(result.pop_within_dist[key])/(result.rural_stats[key]);
-          text3 = text3 + '* ' + result.DB_description[key] + ': ' + (result.pop_within_dist[key]).toFixed(0) + ' inhab. (' +
-            r1.toFixed(2) + '% of the rural pop.) \n';
+    if(typeof fail !== 'undefined'){
+      HELP.show_help_panel('Error during the calculation:' + fail);
+      resultPanel.style().set('shown',false);
+    }else{
+      //clear panel
+      resultPanel.clear();
+      //
+      for(var key in result.DB_description){
+        if(result.total_stats[key]>0){
+          text1 = text1 + '* ' + result.DB_description[key] + ': ' + (result.total_stats[key]).toFixed(0) + ' inhab.\n';
+          
+          var p1 = 100.0*(result.rural_stats[key])/(result.total_stats[key]);
+          text2 = text2 + '* ' + result.DB_description[key] + ': ' + (result.rural_stats[key]).toFixed(0) + ' inhab. (' + 
+            p1.toFixed(2) + '% of the total pop.) ' + ' [' + result.ruralSource[key] + ']\n';     
+              
+          if(result.rural_stats[key]>0){
+            var r1 = 100.0*(result.pop_within_dist[key])/(result.rural_stats[key]);
+            text3 = text3 + '* ' + result.DB_description[key] + ': ' + (result.pop_within_dist[key]).toFixed(0) + ' inhab. (' +
+              r1.toFixed(2) + '% of the rural pop.) \n';
+          }
         }
       }
-    }
-    //------------------------------------------------------------- Total population stat
-    resultPanel.widgets().set(1,
-      ui.Label('Global Population Count in ' + ROI + ' in ' + result.year + ': ', 
-      {fontWeight: 'bold', color:GUIPREF.TEXTCOLOR}));    
-    resultPanel.widgets().set(2,ui.Label(text1,{color:GUIPREF.TEXTCOLOR, whiteSpace:'pre'}));
-
-    //------------------------------------------------------------- Rural population stat
-    resultPanel.widgets().set(3, ui.Label(
-      'Rural Population Count in ' + ROI + ' in ' + result.year + ': ', 
-      {fontWeight: 'bold', color:GUIPREF.TEXTCOLOR}) );
-    resultPanel.widgets().set(4,ui.Label(text2,{color:GUIPREF.TEXTCOLOR, whiteSpace:'pre'}));
-
-    //------------------------------------------------------------- RAI
-    if(text3.length>0){
-      resultPanel.widgets().set(5,ui.Label(
-        'Proportion living within ' + (app.defaultDist2Road/1000) + 'km of a road: ',
-        {fontWeight: 'bold', color:GUIPREF.TEXTCOLOR}));  
-      resultPanel.widgets().set(6,ui.Label(text3,{color:GUIPREF.TEXTCOLOR, whiteSpace:'pre'}));
+      //------------------------------------------------------------- Total population stat
+      resultPanel.widgets().set(1,
+        ui.Label('Global Population Count in ' + ROI + ' in ' + result.year + ': ', 
+        {fontWeight: 'bold', color:GUIPREF.TEXTCOLOR}));    
+      resultPanel.widgets().set(2,ui.Label(text1,{color:GUIPREF.TEXTCOLOR, whiteSpace:'pre'}));
+  
+      //------------------------------------------------------------- Rural population stat
+      resultPanel.widgets().set(3, ui.Label(
+        'Rural Population Count in ' + ROI + ' in ' + result.year + ': ', 
+        {fontWeight: 'bold', color:GUIPREF.TEXTCOLOR}) );
+      resultPanel.widgets().set(4,ui.Label(text2,{color:GUIPREF.TEXTCOLOR, whiteSpace:'pre'}));
+  
+      //------------------------------------------------------------- RAI
+      if(text3.length>0){
+        resultPanel.widgets().set(5,ui.Label(
+          'Proportion living within ' + (app.defaultDist2Road/1000) + 'km of a road: ',
+          {fontWeight: 'bold', color:GUIPREF.TEXTCOLOR}));  
+        resultPanel.widgets().set(6,ui.Label(text3,{color:GUIPREF.TEXTCOLOR, whiteSpace:'pre'}));
+      }
     }
   });
   resultPanel.style().set('height','350px','width','500px');
@@ -766,6 +771,8 @@ var trendPanel = ui.Panel([mapCntrl, graphCntrl],
 /*---------------------------------------------------------------------------------
 *  References
 ---------------------------------------------------------------------------------*/
+var warning = ui.Label('This App works only for Namibia as the road data are missing for other countries!',
+  {backgroundColor: GUIPREF.BACKCOLOR});
 var gpe_gee_info = ui.Label(
     'Global Population Explorer from GEE', 
     {backgroundColor: GUIPREF.BACKCOLOR},
@@ -796,6 +803,7 @@ var OSM_info = ui.Label('OpenStreetMap data',
   'http://download.geofabrik.de/');
   
 var referencePanel = ui.Panel([ui.Label('References and for more information', GUIPREF.LABEL_T_STYLE), 
+  warning,
   gpe_gee_info, GHSL_info, worldPop_info, fbai_info, OSM_info, DEM_info, gsw_info],'flow', GUIPREF.CNTRL_PANEL_STYLE);
 /******************************************************************************************
 * GUI: Screen layout
