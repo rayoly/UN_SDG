@@ -30,6 +30,7 @@ var LEGEND = require('users/rayoly/SDG_APP:fnc/Legend.js');
 var HELP = require('users/rayoly/SDG_APP:fnc/helpBox.js');
 var GUI_AOI = require('users/rayoly/SDG_APP:fnc/GUI_AOI.js');
 var GUI_DATE = require('users/rayoly/SDG_APP:fnc/GUI_date.js');
+var GUI_POP = require('users/rayoly/SDG_APP:fnc/GUI_Pop.js');
 var MODEL_POP = require('users/rayoly/SDG_APP:fnc/MODEL_Pop.js');
 /************************************************************************************
  * Configure layers and locations
@@ -134,30 +135,29 @@ var CalcRAI = function(Year, CountryAbbr, lRegion){
   var result = ee.List([]);
   //Generate list of polygons
   regionRange.forEach( function(region){
-    var p = AOI.GetClippingPolygon(GUI_AOI.countryName, region, GUI_AOI.AssetName, GUI_AOI.RegionID);
+    var p = AOI.GetClippingPolygon(GUI_AOI.countryName, region, GUI_AOI.AssetName, 
+      GUI_AOI.RegionID, GUI_AOI.selectedGEEAsset());
     var v = ee.Dictionary({region: ee.String(region), poly:ee.Geometry(p.polygon), outline:ee.Geometry(p.outline)});
     PolygonLst = PolygonLst.add( v );
   });
   //
   var useGlobalDataset = 1;
   var geeAssetPop;
-  if(population_GEEasset.getValue()){
+  if(GUI_POP.selectedGEEAsset()){
     useGlobalDataset = 0;
     var scale = Number(pop_reso_textbox.getValue()); 
     print('Imported Population dataset will be used. Scale=' + scale);
     //-- loaded Asset
-    geeAssetPop = ee.Image(app.defaultPopAsset)
+    geeAssetPop = ee.Image(GUI_POP.PopAsset)
       .set('scale',scale,'database','GEEasset','name','Imported Asset').rename('GEEasset');
-    geeAssetRuralMask = ee.Image(app.defaultRuralAsset)
-      .set('scale',scale,'database','GEEasset','name','Imported Asset').rename('GEEasset');      
     yearRange = [app.defaultYear];
   }else{
     geeAssetPop = ee.Image.constant(0).set('scale',100000,'database','undef','name','undef').rename('undef');
   }
   //Set rural parameters
   MODEL_POP.setSNIC(app.SNIC_size, app.SNIC_compactness);
-  MODEL_POP.setMaxRuralDensity(app.defaultMaxRuralDensity);
-  MODEL_POP.setRuralAsset(app.defaultRuralAsset);
+  MODEL_POP.setMaxRuralDensity(GUI_POP.MaxRuralDensity);
+  MODEL_POP.setRuralAsset(GUI_POP.RuralAsset);
   //
   var zeroImg = ee.Image.constant(0);//.selfMask();
   var oneImg  = ee.Image.constant(1);
@@ -200,7 +200,7 @@ var CalcRAI = function(Year, CountryAbbr, lRegion){
       ---------------------------------------------------------*/
       //Calculate Rural Mask for each image population
       var RuralMask = PopMap.map( function(img){  
-        return MODEL_POP.CalcRuralMask(img, poly, DateStart, DateEnd, app.performSegmentation);
+        return MODEL_POP.CalcRuralMask(img, poly, DateStart, DateEnd, GUI_POP.performSegmentation);
       } );
 
       /*--------------------------------------------------------
@@ -595,7 +595,8 @@ var plotTrend = function(){
 *****************************************************************************************/
 var exportMap = function(){
   var description = 'RAI_map_for_' + GUI_AOI.RegionID + '_' + app.defaultYear;
-  var poly = AOI.GetClippingPolygon(GUI_AOI.countryName, GUI_AOI.regionName, app.AssetName, GUI_AOI.RegionID);
+  var poly = AOI.GetClippingPolygon(GUI_AOI.countryName, GUI_AOI.regionName, 
+    GUI_AOI.AssetName, GUI_AOI.RegionID, GUI_AOI.selectedGEEAsset());
   
   EXPORT_MAP.exportMap(mapPanel, description, app.AreaScale, poly.polygon, app.EXPORT_CRS)
 };
@@ -654,11 +655,19 @@ GUI_DATE.yearSelect.setValue(app.defaultYear);
 /******************************************************************************************
 * GUI: Selection of a predefined shape.
 ******************************************************************************************/
-GUI_AOI.createGUI(mapPanel, HELP, AOI, GUIPREF, app.defaultCountry, app.defaultRegion);
+GUI_AOI.createGUI(mapPanel, HELP, AOI, GUIPREF, app.defaultCountry, app.defaultRegion, true);
 var LocationPanel = GUI_AOI.LocationPanel;
 mapPanel.centerObject(ee.Geometry(GUI_AOI.Location.polygon));
 GUI_AOI.setAsset(app.defaultAssetName,  app.defaultRegionID);
 
+/******************************************************************************************
+* GUI: Population dataset and definition.
+******************************************************************************************/
+GUI_POP.createGUI(mapPanel, HELP, GUIPREF);
+GUI_POP.setMaxRuralDensity(app.defaultMaxRuralDensity);
+GUI_POP.setPopAsset(app.defaultPopAsset);
+GUI_POP.setRuralAsset(app.defaultRuralAsset);
+GUI_POP.setPerformSegmentation(app.performSegmentation);
 /****************************************************************************************
 * Setting of the definition of the indicator
 * distance to road
@@ -678,98 +687,7 @@ var RoadWidthSlider = ui.Select({
     }
   }
 });
-//edit box to define the maximum rural population density
-var rural_textbox = ui.Textbox({
-  placeholder: 'Max rural population density',
-  style: GUIPREF.EDIT_STYLE,
-  value: '300',
-  onChange: function(text) {
-    if((typeof text=='string' && text.length>0) || text>=0){
-      app.defaultMaxRuralDensity = Number(text);
-    }else{
-      app.defaultMaxRuralDensity = 300;
-    }    
-    //clear map
-    ClearMap(); 
-    //clear result Panel
-    ClearresultPanel();
-  }
-});
-//edit box to define the population asset to use
-GUIPREF.EDIT_STYLE.width = '200px';
-var pop_textbox = ui.Textbox({
-  placeholder: 'users/<username>/....',
-  style: GUIPREF.EDIT_STYLE,
-  value: '',
-  onChange: function(text) {
-    app.defaultPopAsset = text;
-    if(text.length>0){
-      population_gbl_data.setValue(false);
-      population_GEEasset.setValue(true);
-    }else{
-      population_gbl_data.setValue(true);
-      population_GEEasset.setValue(false);
-    }
-    //clear map
-    ClearMap(); 
-    //clear result Panel
-    ClearresultPanel();
-  }
-});
-var ruralmask_textbox = ui.Textbox({
-  placeholder: 'rural mask: users/<username>/....',
-  style: GUIPREF.EDIT_STYLE,
-  value: '',
-  onChange: function(text) {
-    app.defaultRuralAsset = text;
-  }
-});
-GUIPREF.EDIT_STYLE.width = '50px';
-var pop_reso_textbox = ui.Textbox({
-  placeholder: 'Layer ID',
-  style: GUIPREF.EDIT_STYLE,
-  onChange: function(text) {
-    if((typeof text=='string' && text.length>0) || text>=0){
-      exports.RegionID = Number(text);
-    }else{
-      exports.RegionID = 1000;
-    }
-  }
-});
-  
-pop_textbox.setValue(app.defaultPopAsset)
-ruralmask_textbox.setValue(app.defaultRuralAsset);
 
-//Checkbox to selecct how the rural mask is going to be generated
-var perform_segmentation_ck = ui.Checkbox( {
-  label:'Segmentation', 
-  value: app.performSegmentation, 
-  style: GUIPREF.CKBOX_STYLE,
-  onChange: function (value){
-    app.performSegmentation = Number(value);
-  }
-});
-var helpseg = HELP.helpButton('If selected, will perform segmentation on all the population dataset. Otherwise, the specified rural mask or the GHSL Settlement dataset will be used for all datasets, when available!');
-//
-var population_gbl_data = ui.Checkbox( {label:'Population Global Datasets', value: true, style: GUIPREF.CKBOX_STYLE} );
-var population_GEEasset = ui.Checkbox( {label:'Population GEE Asset:', value: false, style: GUIPREF.CKBOX_STYLE} );
-var help_popasset = HELP.helpButton('Enter a population dataset.');
-var help_ruralmask_asset = HELP.helpButton('Enter a raster rural mask (defined such that 0 in rural area, 1 in urban area). This option takes precedence over all other options.');
-population_gbl_data.setDisabled(true);
-population_GEEasset.setDisabled(true);
-var rural_def = ui.Panel([ui.Label('Rural Definition:', GUIPREF.LABEL_T_STYLE),
-    ui.Panel([ ruralmask_textbox, help_ruralmask_asset],ui.Panel.Layout.flow('horizontal',true), GUIPREF.CNTRL_PANEL_STYLE),
-    ui.Panel([perform_segmentation_ck,rural_textbox, ui.Label('inhab./km2', GUIPREF.LABEL_STYLE),helpseg],ui.Panel.Layout.Flow('horizontal'), GUIPREF.CNTRL_PANEL_STYLE),
-    ], 
-  ui.Panel.Layout.Flow('vertical'), GUIPREF.CNTRL_PANEL_STYLE);
-
-var PopulationPanel = ui.Panel([
-      ui.Label( 'Population:', GUIPREF.LABEL_T_STYLE),
-      population_gbl_data, 
-      population_GEEasset,
-      ui.Panel([ pop_textbox, pop_reso_textbox, help_popasset],ui.Panel.Layout.flow('horizontal',true), GUIPREF.CNTRL_PANEL_STYLE),
-      rural_def],
-    'flow', GUIPREF.CNTRL_PANEL_STYLE);
 //Indicator definition panel
 var no_water_ck = ui.Checkbox( {label:'No water', value: false, style: GUIPREF.CKBOX_STYLE, onChange: function(v){app.defaultUseWater=v;}} );
 var use_DEM_ck = ui.Checkbox( {label:'Include Terrain', value: false, style: GUIPREF.CKBOX_STYLE, onChange: function(v){app.defaultUseDEM=v;}} );
@@ -832,7 +750,7 @@ var rangeTypeSelect = ui.Select({
 });
 var helprange = HELP.helpButton('Generate a graph with the change in water quality over a time frame in years or months for the current year.'+
   '\nDisplay the extremum water quality loss and gain from the reference Year onwards.');
-var genTrendBtn = ui.Button( 'Generate Trend', plotTrend, false, GUIPREF.BUTTON_STYLE);
+var genTrendBtn = ui.Button( 'Compute Trend', plotTrend, false, GUIPREF.BUTTON_STYLE);
 var graphCntrl = ui.Panel([genTrendBtn, rangeTypeSelect, helprange],  
   ui.Panel.Layout.Flow('horizontal'), GUIPREF.CNTRL_PANEL_STYLE);
 //-------------------------------------------------------------  
@@ -887,7 +805,7 @@ var referencePanel = ui.Panel([ui.Label('References and for more information', G
 //Tool panel
 toolPanel.add(ui.Panel([ GUI_DATE.datePanel, LocationPanel,
 	DistPanel,
-	PopulationPanel,
+	GUI_POP.PopulationPanel,
 	trendPanel,exportPanel,
 	viewPanel,
 	mailPanel,referencePanel],

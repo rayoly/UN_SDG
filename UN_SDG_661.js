@@ -30,7 +30,7 @@ var EXPORT_MAP = require('users/rayoly/SDG_APP:fnc/exportMap.js');
 var GUIPREF = require('users/rayoly/SDG_APP:fnc/GUI_Prefs.js');
 var LEGEND = require('users/rayoly/SDG_APP:fnc/Legend.js');
 var HELP = require('users/rayoly/SDG_APP:fnc/helpBox.js');
-
+var MODEL_WATER = require('users/rayoly/SDG_APP:fnc/MODEL_Water.js');
 /*=======================================================================================
                                            GLOBAL VARIABLES
 =======================================================================================*/
@@ -43,6 +43,7 @@ app.defaultMonth = 'All';
 app.defaultAssetName = '';
 app.defaultDB = 'GSW';
 app.rangeType = 'Yearly';
+app.defaultIndice = 'NDWI';
 app.NDWI_threshold = 0.5;
 //date list
 app.availableMonths = ['All','01','02','03','04','05','06','07','08','09','10','11','12'];
@@ -63,7 +64,6 @@ var layerProperties = {
       name: 'Year',
       band: 'waterClass',
       min_data_value: 1,
-      WATER_DATASET_name: 'JRC/GSW1_0/YearlyHistory', //dataset
       AreaScale: 30.0, //resolution
       availableYears: Array.apply(null, {length: 32}).map( function(number, index){return (1984+index).toString()}),
       trendSeries: ['Permanent', 'Seasonal','Permanent - Change','Seasonal - Change'],
@@ -76,7 +76,6 @@ var layerProperties = {
       band: 'water',
       min_data_value: 1,
       availableYears: Array.apply(null, {length: 32}).map( function(number, index){return (1984+index).toString()}),
-      WATER_DATASET_name: 'JRC/GSW1_0/MonthlyHistory', //dataset
       AreaScale: 30.0, //resolution
       trendSeries: ['Water'],
       visParam: {min: 0, max: 2, palette: ['white', 'blue']},
@@ -88,7 +87,6 @@ var layerProperties = {
       band: 'waterClass',
       min_data_value: 1,
       availableYears: Array.apply(null, {length: 32}).map( function(number, index){return (1984+index).toString()}),
-      WATER_DATASET_name: 'JRC/GSW1_0/YearlyHistory', //dataset
       AreaScale: 30.0, //resolution
       trendSeries: ['Water'],
       visParam: {bands: 'Permanent_water_coverage', min: 0, max: 1, palette: ['darkred',' red', 'orange', 'white', 'lightblue','blue', 'darkblue']},
@@ -102,7 +100,6 @@ var layerProperties = {
       band: 'water',
       min_data_value: 0,
       availableYears: Array.apply(null, {length: 4}).map( function(number, index){return (2015+index).toString()}),
-      WATER_DATASET_name: 'COPERNICUS/S2', //dataset, L1C: 'COPERNICUS/S2' from 2015, L2A: 'COPERNICUS/S2_SR' from 2017
       AreaScale: 20.0, //resolution
       trendSeries: ['Water', 'Change'],
       visParam: {min: 0, max: 3, palette: ['white', 'blue']},
@@ -136,7 +133,7 @@ var layerProperties = {
   }
 };
 app.defaultLayer = layerProperties[app.defaultDB]['Yearly'];
-
+MODEL_WATER.set_NDWI_threshold(app.NDWI_threshold);
 /*=======================================================================================
                                            FUNCTIONS
 =======================================================================================*/
@@ -188,14 +185,15 @@ var DisplayWaterLayer = function(){
   }
   
   //clip region
-  var poly = AOI.GetClippingPolygon(GUI_AOI.countryName, GUI_AOI.regionName, GUI_AOI.AssetName, GUI_AOI.RegionID);  
+  var poly = AOI.GetClippingPolygon(GUI_AOI.countryName, GUI_AOI.regionName, 
+    GUI_AOI.AssetName, GUI_AOI.RegionID, GUI_AOI.selectedGEEAsset());  
 
   //Generate water layer(s) based on Global surface water dataset or S2 data
   var ImgWaterRegion;
   if(app.defaultDB=='GSW'){
-    ImgWaterRegion = DisplayWaterLayer_GSW(poly.polygon, app.defaultMonth, app.defaultYear);
+    ImgWaterRegion = MODEL_WATER.GSW(poly.polygon, app.defaultMonth, app.defaultYear);
   }else{
-    ImgWaterRegion = DisplayWaterLayer_S2(poly.polygon, app.defaultDB,app.defaultMonth, app.defaultYear);
+    ImgWaterRegion = MODEL_WATER.S2(poly.polygon, app.defaultIndice, app.defaultMonth, app.defaultYear);
   }
   
   //clear map
@@ -246,102 +244,6 @@ var DisplayWaterLayer = function(){
   //Update legend
   LEGEND.setLegend(app.defaultLayer, GUIPREF);
 };
-/*---------------------------------------------------------------------------------------
-* Display water layer from GSW
----------------------------------------------------------------------------------------*/
-var DisplayWaterLayer_GSW = function(poly, month, year){
-  var DateStart, DateEnd;
-
-  year = ee.String(year);
-  month = ee.String(month);
-  month = ee.Number(ee.Algorithms.If(month.compareTo('All').eq(0),0,ee.Number.parse(month)));
-  
-  //load data
-  var WATER_DATASET = ee.ImageCollection(app.defaultLayer.WATER_DATASET_name);
-  //filter data by date
-  var dataset = ee.Algorithms.If(month.eq(0),
-    WATER_DATASET.filter(ee.Filter.date(year.cat('-01-01'), year.cat('-12-31'))),
-    WATER_DATASET.filterMetadata('year','equals',ee.Number.parse(year)).filterMetadata('month','equals',month)
-  );
-  dataset = ee.ImageCollection(dataset);
-  //
-  var ImgWaterRegion = ee.Image(ee.Algorithms.If(
-        dataset.size(),
-        ee.Image(dataset.first()),
-        ee.Image.constant(0).rename(app.defaultLayer.band)
-        ))
-    .select(app.defaultLayer.band)
-    .set('year',ee.Number.parse(year))
-    .set('month',month)
-    .clip(poly);
-    
-  //mask no data region
-  ImgWaterRegion = ImgWaterRegion.updateMask(ImgWaterRegion.gt(app.defaultLayer.min_data_value));
-
-  return ImgWaterRegion;
-};
-/*---------------------------------------------------------------------------------------
-* Display water layer from Sentinel-2 NDWI
----------------------------------------------------------------------------------------*/
-function maskS2clouds(image) {
-  var qa = image.select('QA60');
-
-  // Bits 10 and 11 are clouds and cirrus, respectively.
-  var cloudBitMask = 1 << 10;
-  var cirrusBitMask = 1 << 11;
-
-  // Both flags should be set to zero, indicating clear conditions.
-  var mask = qa.bitwiseAnd(cloudBitMask).eq(0)
-      .and(qa.bitwiseAnd(cirrusBitMask).eq(0));
-
-  return image.updateMask(mask).divide(10000);
-}
-var DisplayWaterLayer_S2 = function(poly, S2_DWI_type, month, year){
-  var DateStart, DateEnd;
-  year = ee.String(year);
-  month = ee.String(month);
-  month = ee.Number(ee.Algorithms.If(month.compareTo('All').eq(0),0,ee.Number.parse(month)));
-  //Calculate NDWI from Sentinel-2
-   //filter data by date
-  DateStart = ee.Algorithms.If(month.eq(0),
-    year.cat('-01-01'),
-    year.cat('-').cat(ee.String(month)).cat('-01')
-  );
-  DateEnd = ee.Algorithms.If(month.eq(0),
-    year.cat('-12-31'),
-    year.cat('-').cat(ee.String(month)).cat('-31')
-  );
-
-  // Create an initial mosiac, which we'll visualize in a few different ways.
-  var dataset = ee.ImageCollection(app.defaultLayer.WATER_DATASET_name)
-      .filterDate(DateStart, DateEnd)
-      .filter(ee.Filter.lt('CLOUDY_PIXEL_PERCENTAGE', 20));        // Pre-filter to get less cloudy granules.
-
-  var image = ee.Image(ee.Algorithms.If(
-      dataset.size().neq(0),
-      dataset.select(['B3','B8','B11','QA60'])
-      .map(maskS2clouds)
-      .median(),
-      ee.Image.constant(0).rename('B3').addBands(ee.Image.constant(0).rename('B8')).addBands(ee.Image.constant(0).rename('B11')  )
-      ))
-  .set('year',ee.Number.parse(year))
-  .set('month',ee.Number.parse(month))
-  .clip(poly);
-  
-  //only interested in water bodies --> NDWI>(app.NDWI_threshold) 
-	//NDWI: (B3-B8)/(B3+B8) // (NIR-SWIR)/(NIR+SWIR) 
-	//NDWI: (B3-B11)/(B3+B11) // (Green-NIR)(Green + NIR) -- ref for water
-	var NDWI = image.clip(poly).normalizedDifference(['B3', 'B11']);
-  var ImgWaterRegion = NDWI.rename(['NDWI']);
-  //water mask as for GSW
-  ImgWaterRegion = ImgWaterRegion.addBands(
-      NDWI.gte(app.NDWI_threshold)
-      .multiply(ee.Number(3.0))
-      .selfMask() 
-      .rename('water'),['water'],true);
-  //
-  return ImgWaterRegion;
-};
 
 /****************************************************************************************
 * Extract water area
@@ -382,7 +284,7 @@ var CalcWaterArea = function(){
     var poly, outline;
     //
     if(app.rangeType=='Yearly'){
-      HELP.show_help_panel('Trend over all the years');
+      //HELP.show_help_panel('Trend over all the years');
       //define layer to use
       app.defaultLayer = layerProperties[app.defaultDB].Yearly;
       //Years and months to consider
@@ -390,7 +292,7 @@ var CalcWaterArea = function(){
       monthRange = ['All'];
       regionRange = [app.defaultRegion];
     }else if(app.rangeType=='Monthly'){
-      HELP.show_help_panel('Monthly trend for the year ' + app.defaultYear);
+      //HELP.show_help_panel('Monthly trend for the year ' + app.defaultYear);
       //define layer to use
       app.defaultLayer = layerProperties[app.defaultDB].Monthly;
       //Years and months to consider
@@ -418,7 +320,8 @@ var CalcWaterArea = function(){
     var result = ee.List([]);
     //Generate list of polygons
     regionRange.forEach( function(region){
-      var p = AOI.GetClippingPolygon(GUI_AOI.countryName, region, GUI_AOI.AssetName, GUI_AOI.RegionID);
+      var p = AOI.GetClippingPolygon(GUI_AOI.countryName, region,
+        GUI_AOI.AssetName, GUI_AOI.RegionID, GUI_AOI.selectedGEEAsset());
       var v = ee.Dictionary({region: ee.String(region), poly:ee.Geometry(p.polygon), outline:ee.Geometry(p.outline)});
       PolygonLst = PolygonLst.add( v );
     });
@@ -440,8 +343,8 @@ var CalcWaterArea = function(){
           
           //-------- Load data &  Select band to use
           ImgWaterRegion = ee.Image(ee.Algorithms.If(ee.String(app.defaultDB).compareTo('GSW').eq(0),
-            DisplayWaterLayer_GSW(poly, month, year),
-            DisplayWaterLayer_S2(poly, app.defaultDB, month, year))).select(app.defaultLayer.band);
+            MODEL_WATER.GSW(poly, month, year),
+            MODEL_WATER.S2(poly, app.defaultDB, month, year))).select(app.defaultLayer.band);
           
           //-------- Calculate areas
           area_permanent = ee.Number(waterCount(ImgWaterRegion, poly, ee.Number(app.defaultLayer.AreaScale), 3)).divide(1e6);
@@ -491,6 +394,8 @@ var plotTrend = function(){
   var Outline = result.map(function(r){return ee.Geometry(ee.Dictionary(r).get('Outline'));}).flatten();
   Outline = Outline.slice(1).iterate(function(cur, prev){return ee.Geometry(prev).union(ee.Geometry(cur));},
     Outline.get(0));  
+  //Add outline to map
+  mapPanel.add(ui.Map.Layer(ee.Geometry(Outline), {}, 'Region'));    
   //Update result Panel
   if(app.rangeType=='Regional'){
     resultPanel.widgets().set(1, ui.Label('Calculating Regional Trend...'));
@@ -523,10 +428,7 @@ var plotTrend = function(){
         //Add regional data to map
         mapPanel.add(ui.Map.Layer( TimeSeriesMap.mosaic(), 
           app.defaultLayer.visParam, app.defaultLayer.name,true));    
-    
-        //Add outline to map
-        mapPanel.add(ui.Map.Layer(ee.Geometry(Outline), {}, 'Region'));
-        
+
         //Create legend
         LEGEND.setLegend(app.defaultLayer, GUIPREF);
         
@@ -568,7 +470,7 @@ var plotTrend = function(){
      //clear result Panel
       ClearresultPanel();
       if(typeof fail !== 'undefined'){
-        HELP.show_help_panel('Error during the time series calculation:' + undefined);
+        HELP.show_help_panel('Error during the time series calculation:' + fail);
       }else{
         //5-year average
         area_permanent = data.map(function(d){return d.area_permanent});
@@ -741,7 +643,8 @@ var exportMap = function(){
   HELP.show_help_panel('Generating Export Task for '+ GUI_AOI.countryName + ' in ' + app.defaultYear + '.' + app.defaultMonth);
 
   var description = 'Water_map_for_' + app.RegionID + '_' + app.defaultYear + '-' + app.defaultMonth;
-  var poly = AOI.GetClippingPolygon(GUI_AOI.countryName, GUI_AOI.regionName, GUI_AOI.AssetName, GUI_AOI.RegionID);
+  var poly = AOI.GetClippingPolygon(GUI_AOI.countryName, GUI_AOI.regionName, 
+    GUI_AOI.AssetName, GUI_AOI.RegionID, GUI_AOI.selectedGEEAsset());
   
   EXPORT_MAP.exportMap(mapPanel, description, app.defaultLayer.AreaScale, poly.polygon, app.EXPORT_CRS);
 };
@@ -827,11 +730,12 @@ var DBSelect = ui.Select({
 
 GUIPREF.EDIT_STYLE.width = '50px';
 var ndwi_textbox = ui.Textbox({
-  value: ndwi_textbox,
+  value: app.NDWI_threshold,
   placeholder: 'NDWI threshold',
   style: GUIPREF.EDIT_STYLE,
   onChange: function(text) {
     app.NDWI_threshold = Number(text);
+    MODEL_WATER.set_NDWI_threshold(app.NDWI_threshold);
     HELP.show_help_panel('NDWI Threshold ' + app.NDWI_threshold );
   }
 });
@@ -928,7 +832,7 @@ var rangeTypeSelect = ui.Select({
 });
 var helprange = HELP.helpButton('Generate a graph with the change in water area over a time frame in years or months for the current year.'+
   '\nDisplay the extremum water loss and gain from the reference Year onwards.');
-var genGraphBtn = ui.Button( 'Generate Trend', plotTrend, false, GUIPREF.BUTTON_STYLE);
+var genGraphBtn = ui.Button( 'Compute Trend', plotTrend, false, GUIPREF.BUTTON_STYLE);
 var graphCntrl = ui.Panel([genGraphBtn, rangeTypeSelect, helprange],  
   ui.Panel.Layout.Flow('horizontal'), GUIPREF.CNTRL_SUBPANEL_STYLE);
 

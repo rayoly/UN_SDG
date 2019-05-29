@@ -36,78 +36,84 @@ exports.regionName = '';
 exports.AssetName = '';
 exports.RegionID = -1;
 
-var countrySelect;
-var regionSelect;
-var assetPanel;
-var asset_textbox;
-var asset_LID_textbox;
-var active_preshape;
-var active_gee_asset;
+var gui = {};
+var useRoad = false;
 /****************************************************************************************
-* Define panel for selecting the AOI
+*  
 *****************************************************************************************/
-exports.createGUI = function(mapPanel, HELP, AOI, GUIPREF, country, region){
-  //default values
-  exports.Location = AOI.CountryLoc[country];
-  exports.RegionLst = AOI.RegionsList(country); 
-  var poly = AOI.GetClippingPolygon(country, region,exports.AssetName,exports.RegionID).polygon; 
-  exports.ROAD_DATASET = {data:ee.Collection.loadTable('users/rayoly/' + country.toUpperCase() +'_ROADS'), scale:100, coef:1};
-  var propnames = 'code';//exports.ROAD_DATASET.data.first().propertyNames();
+var retrieve_road_network = function(mapPanel, AOI, country, region, assetname, regionid){
+  var poly = AOI.GetClippingPolygon(country, region, assetname, regionid).polygon; 
+  var road_asset = 'users/rayoly/' + country.toUpperCase() +'_ROADS';
+  print('Loading road asset:' + road_asset);      
+  exports.ROAD_DATASET = {data:ee.Collection.loadTable(road_asset), scale:100, coef:1};
+  var propnames = exports.ROAD_DATASET.data.first().propertyNames();
   var prop = {
     properties: ['code'],
     reducer: ee.Reducer.first()
   };
+  //mapPanel.add(ui.Map.Layer(ee.Geometry(poly), {}, 'Region'));
   exports.ROAD_DATASET.data = ee.Image(exports.ROAD_DATASET.data
     .filter(ee.Filter.bounds(poly))
-    .filter(ee.Filter.gt(propnames,0))
+    .filter(ee.Filter.notNull(propnames))
     .reduceToImage(prop));
-
+};
+/****************************************************************************************
+* Define panel for selecting the AOI
+*****************************************************************************************/
+exports.createGUI = function(mapPanel, HELP, AOI, GUIPREF, country, region, getroad){
+  //default values
+  exports.Location = AOI.CountryLoc[country];
+  exports.RegionLst = AOI.RegionsList(country); 
   exports.regionName = region;
-  exports.countryName = country;
-
+  exports.countryName = country;  
+  if(typeof getroad == 'undefined'){
+    getroad = false;
+  }
+  useRoad = getroad;
+  //
+  if(useRoad){
+    retrieve_road_network(mapPanel, AOI, exports.countryName , exports.regionName, exports.AssetName, exports.RegionID);
+  }
+  //
   /****************************************************************************************
   * GUI: pull down menus for the selection of a predefine shape (country and region)
   *****************************************************************************************/
   //------------------------------------------------------------ Create the country pulldown
   var locations = Object.keys(AOI.CountryLoc);
   var index = locations.sort().indexOf(country);
-  countrySelect = ui.Select({
+  gui.countrySelect = ui.Select({
     items: locations.sort(),
     value: locations[index],
     style: GUIPREF.SELECT_STYLE,
     //------------------------------------
-    
     onChange: function(country) {
       exports.Location = AOI.CountryLoc[country];
       exports.countryName = country;
-      exports.ROAD_DATASET = {data:ee.Collection.loadTable('users/rayoly/' + country.toUpperCase() +'_ROADS'), scale:100, coef:1};
-      var propnames = exports.ROAD_DATASET.data.first().propertyNames();
-      var prop = {
-        properties: ['code'],
-        reducer: ee.Reducer.first()
-      };
-      exports.ROAD_DATASET.data = ee.Image(exports.ROAD_DATASET.data
-		.filter(ee.Filter.bounds(poly))
-		.filter(ee.Filter.notNull(propnames))
-		.reduceToImage(prop));
+      exports.regionName = 'All';
       //
-      active_preshape.setValue(true);
-      active_gee_asset.setValue(false);
+      if(useRoad){
+        retrieve_road_network(mapPanel, AOI, exports.countryName , exports.regionName, exports.AssetName, exports.RegionID);
+      }
+      //
+      gui.active_preshape.setValue(true);
+      gui.active_gee_asset.setValue(false);
       //Get administrative regions
       exports.RegionLst = AOI.RegionsList(country);
-      exports.regionName = 'All';
-      var regionSelect = ui.Select({
+      gui.regionSelect = ui.Select({
         items: exports.RegionLst,
         value: exports.RegionLst[0],
         style: GUIPREF.SELECT_STYLE,
         onChange: function(value) {
           exports.regionName = value;
           //
-          active_preshape.setValue(true);
-          active_gee_asset.setValue(false);
+          if(useRoad){
+            retrieve_road_network(mapPanel, AOI, exports.countryName , exports.regionName, exports.AssetName, exports.RegionID);
+          }
+          gui.active_preshape.setValue(true);
+          gui.active_gee_asset.setValue(false);
         }
       });
-      predefLocPanel.widgets().set(2,regionSelect);
+      gui.predefLocPanel.widgets().set(2,gui.regionSelect);
       //Update center of map
       mapPanel.centerObject(ee.Geometry(exports.Location.polygon));
     }
@@ -115,25 +121,30 @@ exports.createGUI = function(mapPanel, HELP, AOI, GUIPREF, country, region){
   
   //------------------------------------------------------------ Create the region pulldown
   var regions = exports.RegionLst.sort();
-  regionSelect = ui.Select({
+  gui.regionSelect = ui.Select({
     items: regions,
     value: regions[regions.indexOf(region)],
     style: GUIPREF.SELECT_STYLE,
     onChange: function(value) {
       exports.regionName = value;
       //
-      active_preshape.setValue(true);
-      active_gee_asset.setValue(false);
+      if(useRoad){
+        retrieve_road_network(mapPanel, AOI, exports.countryName , exports.regionName, exports.AssetName, exports.RegionID);
+      }
+      //
+      gui.active_preshape.setValue(true);
+      gui.active_gee_asset.setValue(false);
       //Update center of map
       mapPanel.centerObject(ee.Geometry(exports.Location.polygon));    
     }
   });
 
   //-------------------------------------------------------------------------------------  Selection of a predefined shape 
-  var helppreshape = HELP.helpButton('Select the Region Of Interest, based on USDOS LSIB. Regional levels are defined from GAUL level 1, 2008.');
-  active_preshape = ui.Checkbox( {label:'Predefined:', value: true, style: GUIPREF.CKBOX_STYLE} );
-  active_preshape.setDisabled(true);
-  var predefLocPanel = ui.Panel( [active_preshape,countrySelect, regionSelect,helppreshape],
+  gui.helppreshape = HELP.helpButton('Select the Region Of Interest, based on USDOS LSIB. Regional levels are defined from GAUL level 1, 2008.');
+  gui.active_preshape = ui.Checkbox( {label:'Predefined:', value: true, style: GUIPREF.CKBOX_STYLE} );
+  gui.active_preshape.setDisabled(true);
+  
+  gui.predefLocPanel = ui.Panel( [gui.active_preshape, gui.countrySelect, gui.regionSelect, gui.helppreshape],
     ui.Panel.Layout.flow('horizontal',true), GUIPREF.CNTRL_PANEL_STYLE);
   
   /****************************************************************************************
@@ -141,13 +152,13 @@ exports.createGUI = function(mapPanel, HELP, AOI, GUIPREF, country, region){
   *****************************************************************************************/
   
   //------------------------------------------------------------------------------------- Build Help for GEE Asset
-  var helpgeeasset = HELP.helpButton('Select a region from your GEE ASSETS with the defined layer ID.');
-  active_gee_asset = ui.Checkbox( {label:'GEE ASSET Shapefile:', value: false, style: GUIPREF.CKBOX_STYLE} );
-  active_gee_asset.setDisabled(true);
+  gui.helpgeeasset = HELP.helpButton('Select a region from your GEE ASSETS with the defined layer ID.');
+  gui.active_gee_asset = ui.Checkbox( {label:'GEE ASSET Shapefile:', value: false, style: GUIPREF.CKBOX_STYLE} );
+  gui.active_gee_asset.setDisabled(true);
   
   //------------------------------------------------------------------------------------- Build GEE Asset name box
   GUIPREF.EDIT_STYLE.width = '200px';
-  asset_textbox = ui.Textbox({
+  gui.asset_textbox = ui.Textbox({
     placeholder: 'users/<username>/....',
     style: GUIPREF.EDIT_STYLE,
     onChange: function(text) {
@@ -157,17 +168,17 @@ exports.createGUI = function(mapPanel, HELP, AOI, GUIPREF, country, region){
           //mapPanel.add(ui.Map.Layer(poly.outline, {}, 'Region'));		
           HELP.show_help_panel('New asset to use ' + exports.AssetName );
           //
-          active_preshape.setValue(false);
-          active_gee_asset.setValue(true);
+          gui.active_preshape.setValue(false);
+          gui.active_gee_asset.setValue(true);
         }else{
-          active_preshape.setValue(true);
-          active_gee_asset.setValue(false);
+          gui.active_preshape.setValue(true);
+          gui.active_gee_asset.setValue(false);
         }
       }
   });
   //------------------------------------------------------------------------------------- Build Layer ID box
   GUIPREF.EDIT_STYLE.width = '50px';
-  asset_LID_textbox = ui.Textbox({
+  gui.asset_LID_textbox = ui.Textbox({
     placeholder: 'Layer ID',
     style: GUIPREF.EDIT_STYLE,
     onChange: function(text) {
@@ -180,39 +191,40 @@ exports.createGUI = function(mapPanel, HELP, AOI, GUIPREF, country, region){
         //var poly = AOI.GetClippingPolygon(exports.countryName, exports.regionName, exports.AssetName, exports.RegionID);
         //mapPanel.add(ui.Map.Layer(poly.outline, {}, 'Region'));	
         //
-        active_preshape.setValue(false);
-        active_gee_asset.setValue(true);
+        gui.active_preshape.setValue(false);
+        gui.active_gee_asset.setValue(true);
       }else{
-        active_preshape.setValue(true);
-        active_gee_asset.setValue(false);
+        gui.active_preshape.setValue(true);
+        gui.active_gee_asset.setValue(false);
       }
     }
   });
   
   //------------------------------------------------------------------------------------- Build Panel
-  assetPanel = ui.Panel([
-      active_gee_asset, 
-      ui.Panel([asset_textbox, asset_LID_textbox, helpgeeasset],ui.Panel.Layout.flow('horizontal',true), GUIPREF.CNTRL_PANEL_STYLE)
+  gui.assetPanel = ui.Panel([
+      gui.active_gee_asset, 
+      ui.Panel([gui.asset_textbox, gui.asset_LID_textbox, gui.helpgeeasset],
+      ui.Panel.Layout.flow('horizontal',true), GUIPREF.CNTRL_PANEL_STYLE)
     ],
     'flow', GUIPREF.CNTRL_PANEL_STYLE);
   
-  exports.LocationPanel = ui.Panel([ui.Label( 'Location:', GUIPREF.LABEL_T_STYLE),  predefLocPanel, assetPanel], 'flow', GUIPREF.CNTRL_PANEL_STYLE);
+  exports.LocationPanel = ui.Panel([ui.Label( 'Location:', GUIPREF.LABEL_T_STYLE),  gui.predefLocPanel, gui.assetPanel], 'flow', GUIPREF.CNTRL_PANEL_STYLE);
 }
 /****************************************************************************************
 * Retrieve the status of the GEE Asset checkbox
 *****************************************************************************************/
 exports.selectedGEEAsset = function(){
-  return active_gee_asset.getValue();
+  return gui.active_gee_asset.getValue();
 }
 exports.selectedPreShape = function(){
-  return active_preshape.getValue();
+  return gui.active_preshape.getValue();
 }
 /****************************************************************************************
 * Set the status of the GEE Asset checkbox
 *****************************************************************************************/
 exports.setAsset = function(assetName, layerID){
-  asset_textbox.setValue(assetName);
-  asset_LID_textbox.setValue(layerID);
+  gui.asset_textbox.setValue(assetName);
+  gui.asset_LID_textbox.setValue(layerID);
   exports.AssetName = assetName;
   exports.RegionID = layerID;
 }

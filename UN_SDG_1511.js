@@ -28,6 +28,9 @@ var EXPORT_MAP = require('users/rayoly/SDG_APP:fnc/exportMap.js');
 var GUIPREF = require('users/rayoly/SDG_APP:fnc/GUI_Prefs.js');
 var LEGEND = require('users/rayoly/SDG_APP:fnc/Legend.js');
 var HELP = require('users/rayoly/SDG_APP:fnc/helpBox.js');
+var GUI_AOI = require('users/rayoly/SDG_APP:fnc/GUI_AOI.js');
+var GUI_DATE = require('users/rayoly/SDG_APP:fnc/GUI_date.js');
+var MODEL_FOREST = require('users/rayoly/SDG_APP:fnc/MODEL_Forest.js');
 
 /************************************************************************************
  * Configure layers and locations
@@ -35,10 +38,6 @@ var HELP = require('users/rayoly/SDG_APP:fnc/helpBox.js');
 //Use dataset USDOS LSIB 2017
 var COUNTRY_DATASET = ee.FeatureCollection('USDOS/LSIB_SIMPLE/2017');
 var app = {};
-//include modis land classification to extract water  mask
-var FOREST_MASK = ee.ImageCollection('MODIS/006/MCD12Q1')
-  .select('LC_Type1')
-  .map(function(img){return img.lte(8);});
 
 //default values
 app.defaultCountry = 'Namibia';
@@ -73,7 +72,6 @@ var TimeSeriesParam = {
 var layerProperties = {
   'MODIS':{
       band: 'EVI',
-      DATASET_name: 'MODIS/006/MOD13A2', //dataset: MODIS Terra Daily EVI
       AreaScale: 1000.0, //resolution
       availableYears: Array.apply(null, {length: 18}).map( function(number, index){return (2002+index).toString()}),
       trendSeries: ['Area','Change'],
@@ -83,7 +81,6 @@ var layerProperties = {
   'S2':{
       band: 'EVI',
       availableYears: Array.apply(null, {length: 4}).map( function(number, index){return (2015+index).toString()}),
-      DATASET_name: 'COPERNICUS/S2', //dataset, L1C: 'COPERNICUS/S2' from 2015, L2A: 'COPERNICUS/S2_SR' from 2017
       AreaScale: 20.0, //resolution
       trendSeries: ['Area', 'Change'],
       visParams: {min: -1, max: 1, palette: ['red', 'white', 'green']},
@@ -97,6 +94,11 @@ app.defaultLocation = AOI.CountryLoc[app.defaultCountry];
 * Help panel 
 *****************************************************************************************/
 HELP.createHelpBox('This App can be used to evaluate the trend in forest area and evaluate UN SDG Indicator 15.1.1', GUIPREF);
+MODEL_FOREST.set_EVI_Threshold(app.EVI_min, app.EVI_max);
+GUI_DATE.YearList = app.defaultLayer.availableYears;
+/*=======================================================================================
+                                           FUNCTIONS
+=======================================================================================*/
 
 /****************************************************************************************
 * Clear map panel
@@ -115,34 +117,65 @@ var ClearresultPanel = function(){
   }
 }
 
-/*****************************************************************************************
- * Map panel configuration
- *****************************************************************************************/
-ui.root.setLayout(ui.Panel.Layout.flow('horizontal'));
+/****************************************************************************************
+* Extract forest area
+*****************************************************************************************/
+var forestCount = function(image, geometry, AreaScale){
+
+  var area = ee.Image.pixelArea();
+  var forestArea = ee.Image(image.select('forest'))
+                    .multiply(area)
+                    .rename('forestArea');
+  
+  var stats = forestArea.reduceRegion({
+      reducer: ee.Reducer.sum(), 
+      geometry: geometry, 
+      scale: AreaScale,
+      //bestEffort: true,
+      maxPixels: 1e11
+    });
+    
+  var StrArea = stats.get('forestArea');
+  return StrArea;
+};
 
 /****************************************************************************************
-* GUI: Create a control panel.
+* Extract forest area
 *****************************************************************************************/
-var header = ui.Label('SDG 15.1.1: Forest Area Change', GUIPREF.TITLE_STYLE);
-var subheader = ui.Label(' ', GUIPREF.SUBTITLE_STYLE);
-var toolPanel = ui.Panel([header, subheader], 'flow', GUIPREF.PANEL_STYLE);
-
-/*****************************************************************************************
-* GUI: Create a map panel.
-*****************************************************************************************/
-var mapPanel = ui.Map();
-mapPanel.add(HELP.help_panel);
-// Take all tools off the map except the zoom and mapTypeControl tools.
-mapPanel.setControlVisibility({all: true, zoomControl: true, mapTypeControl: true});
-
-mapPanel.centerObject( ee.Geometry(app.defaultLocation.polygon) );
-
-/****************************************************************************************
-* GUI: Create a plotting/results panel.
-****************************************************************************************/
-var resultPanel = ui.Panel([],  'flow', 
-  {border: '1px solid black', width: '300px', height: '200px', position: 'bottom-right', shown:false } );
-resultPanel.add(ui.Label('Forest Area Over Time', {fontWeight: 'bold', color:GUIPREF.TEXTCOLOR}))
+var CalcForestArea = function(){
+    //Output data
+    var data = {date: [], area: [], pctchange:[]}; 
+    //    
+    var i;
+    var DateStart, DateEnd, yearRange;
+    var ImgForestRegion;
+    var TimeSeriesMap = ee.List([]);
+    //
+    var poly = AOI.GetClippingPolygon(GUI_AOI.countryName, GUI_AOI.regionName, 
+      GUI_AOI.AssetName, GUI_AOI.RegionID, GUI_AOI.selectedGEEAsset());
+    //
+    //define layer to use
+    app.defaultLayer = layerProperties[app.defaultDB];
+    yearRange = app.defaultLayer.availableYears;
+    //LOOP
+    var result = ee.List(yearRange).map(function(year){
+      //-------- Load data &  Select band to use
+      ImgForestRegion = ee.Image(ee.Algorithms.If(ee.String(app.defaultDB).compareTo('MODIS').eq(0),
+        MODEL_FOREST.MODIS(year, poly),
+        MODEL_FOREST.S2(app.defaultIndice, year, poly)));
+      //----------------------------------------------------------------------------------------
+      var area = ee.Number(forestCount(ImgForestRegion, poly.polygon, app.defaultLayer.AreaScale)).divide(1e6);
+      //
+      return ee.Dictionary({
+        Map: ImgForestRegion.select([app.defaultIndice,'forest']), 
+        Outline: poly.outline,
+        Polygon: poly.polygon,
+        area:area, 
+        date: year});
+    });
+    //
+    return result;
+}
 
 /****************************************************************************************
 * Display forest layer for the selected year and region
@@ -150,20 +183,23 @@ resultPanel.add(ui.Label('Forest Area Over Time', {fontWeight: 'bold', color:GUI
 var DisplayForestLayer = function(){
   //Update legend
   LEGEND.setLegend(app.defaultLayer, GUIPREF);
+
+  //Define region outline
+  var poly = AOI.GetClippingPolygon(GUI_AOI.countryName, GUI_AOI.regionName, GUI_AOI.AssetName, 
+      GUI_AOI.RegionID, GUI_AOI.selectedGEEAsset());
+  
   //Generate forest layer(s) based on Global surface forest dataset or S2 data
   var ImgForestRegion;
   if(app.defaultDB=='MODIS'){
-    ImgForestRegion = DisplayForestLayer_MODIS(app.defaultYear);
+    ImgForestRegion = MODEL_FOREST.MODIS(app.defaultYear, poly);
   }else{
-    ImgForestRegion = DisplayForestLayer_S2(app.defaultDB, app.defaultYear);
+    ImgForestRegion = MODEL_FOREST.S2(app.defaultDB, app.defaultYear, poly);
   }
   //Clear Map
   ClearMap();
   //Clear Result Panel
   ClearresultPanel();
   
-  //Define region outline
-  var poly = AOI.GetClippingPolygon(app.defaultCountry, app.defaultRegion, app.defaultAssetName, app.RegionID);  
   //plot outline
   mapPanel.add(ui.Map.Layer(poly.outline, {}, 'Region'));
   
@@ -203,195 +239,6 @@ var DisplayForestLayer = function(){
   resultPanel.style().set('height','120px');
 }
 
-/*---------------------------------------------------------------------------------------
-* Display forest layer from MODIS
----------------------------------------------------------------------------------------*/
-function maskMODISclouds(image) {
-  var qa = image.select('SummaryQA');
-  // good data
-  var mask = qa.eq(0);
-  return image.updateMask(mask).divide(10000);
-}
-
-var DisplayForestLayer_MODIS = function(year){
-  var DateStart, DateEnd;
-  var dataset, layer;
-  var ImgForestRegion;
-  
-  year = ee.String(year);
-  //clip region
-  var poly = AOI.GetClippingPolygon(app.defaultCountry, app.defaultRegion, app.defaultAssetName, app.RegionID);  
-  
-  //load data
-  FOREST_DATASET = ee.ImageCollection(app.defaultLayer.DATASET_name);
-  
-  //filter data by date
-  DateStart = year.cat('-01-01');
-  DateEnd = year.cat('-12-31');
-  dataset = FOREST_DATASET.filter(ee.Filter.date(DateStart, DateEnd));
-  dataset = dataset.select(['NDVI','EVI','SummaryQA'])
-  //
-  ImgForestRegion = ee.Image(ee.Algorithms.If(
-        dataset.size(),
-        ee.Image(dataset.select(['NDVI','EVI','SummaryQA']).map(maskMODISclouds).median()),
-        ee.Image.constant(0).rename('NDVI').addBands(ee.Image.constant(0).rename('EVI'))
-        ))
-    .select(['NDVI','EVI'])
-    .set('year',ee.Number.parse(year))
-    .clip(poly.polygon);
-    
-  var EVI = ee.Image(ImgForestRegion).select('EVI');
-  
-  ImgForestRegion = ImgForestRegion.addBands(
-    EVI.gte(app.EVI_min).and(EVI.lte(app.EVI_max))
-    .selfMask()
-    .rename('forest'),['forest'],true);
-    
-  return ImgForestRegion;
-}
-/*---------------------------------------------------------------------------------------
-* Display forest layer from Sentinel-2 EVI
----------------------------------------------------------------------------------------*/
-function maskS2clouds(image) {
-  var qa = image.select('QA60');
-
-  // Bits 10 and 11 are clouds and cirrus, respectively.
-  var cloudBitMask = 1 << 10;
-  var cirrusBitMask = 1 << 11;
-
-  // Both flags should be set to zero, indicating clear conditions.
-  var mask = qa.bitwiseAnd(cloudBitMask).eq(0)
-      .and(qa.bitwiseAnd(cirrusBitMask).eq(0));
-
-  return image.updateMask(mask).divide(10000);
-}
-var DisplayForestLayer_S2 = function(S2_DWI_type, year){
-  var dataset, layer;
-  
-  year = ee.String(year);
-  //clip region
-  var poly = AOI.GetClippingPolygon(app.defaultCountry, app.defaultRegion, app.defaultAssetName, app.RegionID);  
-
-  //Calculate EVI from Sentinel-2
-  // Create an initial mosiac, which we'll visualize in a few different ways.
-  dataset = ee.ImageCollection(app.defaultLayer.DATASET_name)
-      .filterDate(year.cat('-01-01'), year.cat('-12-31'))
-      .filter(ee.Filter.lt('CLOUDY_PIXEL_PERCENTAGE', 20));        // Pre-filter to get less cloudy granules.
-  
-  var image = ee.Image(ee.Algorithms.If(
-      dataset.size().neq(0),
-      dataset.select(['B3','B8','B11','QA60'])
-      .map(maskS2clouds)
-      .median(),
-      ee.Image.constant(0).rename('B3').addBands(ee.Image.constant(0).rename('B8')).addBands(ee.Image.constant(0).rename('B11')  )
-      ))
-  .set('year',ee.Number.parse(year))
-  .clip(poly.polygon);
-
-  //only interested in forest bodies --> EVI>(EVI_threshold) 
-	//EVI = G * (NIR-RED) / (NIR + C1*RED - C2*BLUE + L)
-	var EVI = image.expressions('G*(NIR-RED)/(NIR+C1*RED-C2*BLUE+L)',
-    { BLUE:EVI.select('B2'),
-      RED:EVI.select('B4'),
-      NIR:EVI.select('B8'),
-      L: 1.0, 
-      C1: 6.0,
-      C2: 7.5,
-      G: 2.5}).rename(['EVI']);
-  
-  //mask as for MODIS
-  ImgForestRegion = ImgForestRegion.addBands(EVI);
-  
-  ImgForestRegion = ImgForestRegion.addBands(
-      EVI.gte(app.EVI_min).and(EVI.lte(app.EVI_max))
-      .selfMask() 
-      .rename('forest'),['forest'],true);
-  //
-  return ImgForestRegion;
-}
-
-/****************************************************************************************
-* Extract forest area
-*****************************************************************************************/
-var forestCount = function(image, geometry, AreaScale){
-
-  var area = ee.Image.pixelArea();
-  var forestArea = ee.Image(image.select('forest'))
-                    .multiply(area)
-                    .rename('forestArea');
-  
-  var stats = forestArea.reduceRegion({
-      reducer: ee.Reducer.sum(), 
-      geometry: geometry, 
-      scale: AreaScale,
-      //bestEffort: true,
-      maxPixels: 1e11
-    });
-    
-  var StrArea = stats.get('forestArea');
-  return StrArea;
-};
-
-
-/****************************************************************************************
-* Extract forest area
-*****************************************************************************************/
-var CalcForestArea = function(){
-    //Output data
-    var data = {date: [], area: [], pctchange:[]}; 
-    //    
-    var i;
-    var DateStart, DateEnd, yearRange;
-    var ImgForestRegion;
-    var TimeSeriesMap = ee.List([]);
-    //
-    var poly = AOI.GetClippingPolygon(app.defaultCountry, app.defaultRegion, app.defaultAssetName, app.RegionID);
-    //
-    //define layer to use
-    app.defaultLayer = layerProperties[app.defaultDB];
-    yearRange = app.defaultLayer.availableYears;
-    //LOOP
-    var result = ee.List(yearRange).map(function(year){
-      //-------- Load data &  Select band to use
-      ImgForestRegion = ee.Image(ee.Algorithms.If(ee.String(app.defaultDB).compareTo('MODIS').eq(0),
-        DisplayForestLayer_MODIS(year),
-        0));//DisplayForestLayer_S2(app.defaultDB, year)));
-      
-      //----------------------------------------------------------------------------------------
-      var area = ee.Number(forestCount(ImgForestRegion, app.defaultLocation.polygon, app.defaultLayer.AreaScale)).divide(1e6);
-      return ee.Dictionary({
-        map: ImgForestRegion.select([app.defaultIndice,'forest']), 
-        Outline: poly.outline,
-        Polygon: poly.polygon,
-        area:area, 
-        year: year});
-    });
-    //
-    data.area = result.map(function(r){return ee.Dictionary(r).get('area');}).getInfo();
-    data.date = result.map(function(r){return ee.Dictionary(r).get('year');}).getInfo();
-    //Outline
-    data.Outline = result.map(function(r){return ee.Geometry(ee.Dictionary(r).get('Outline'));}).flatten();
-    data.Outline = data.Outline.slice(1).iterate(function(cur, prev){return ee.Geometry(prev).union(ee.Geometry(cur));},
-      data.Outline.get(0));
-    //Polygon
-    data.Polygon = result.map(function(r){return ee.Geometry(ee.Dictionary(r).get('Polygon'));}).flatten();
-    data.Polygon = data.Polygon.slice(1).iterate(function(cur, prev){return ee.Geometry(prev).union(ee.Geometry(cur));},
-      data.Polygon.get(0));  
-      
-    TimeSeriesMap = result.map(function(r){return ee.Dictionary(r).get('map');});
-    //5-year average
-    var gamma;
-    var beta = AVG.Average5(data.area, 2005-2001);
-    for(i=0;i<data.area.length;i++){
-        gamma = AVG.Average5(data.area,i);
-        data.pctchange.push( (beta-gamma)/beta*100 );
-    }
-    //Convert
-    TimeSeriesMap = ee.ImageCollection.fromImages(TimeSeriesMap);
-    //
-    return {data: data, TimeSeriesMap: TimeSeriesMap};
-}
-
 /****************************************************************************************
 * Plot forest area over time period
 *****************************************************************************************/
@@ -400,131 +247,145 @@ var plotTrend = function(){
   ClearMap();
   //Clear Result Panel
   ClearresultPanel();
-  
-  var alldata = CalcForestArea();
-  var areas;
-  var title;
-  var time_range = alldata.data.date;
-
-  areas = [alldata.data.area, alldata.data.pctchange];
-  //Print title
-  if(app.defaultAssetName.length===0){
-    title = 'Forest Area Over Time over ' + app.defaultCountry + '.' + app.defaultRegion +
-        ' during '+ app.defaultYear;
-  }else{
-    title = 'Forest Area Over Time over ' + app.defaultAssetName + '.' + app.RegionID + 
-        ' during '+ app.defaultYear;
-  }
-
-  var forestChart = ui.Chart.array.values(areas, 1, time_range)
-    .setChartType('LineChart')
-    .setSeriesNames(app.defaultLayer.trendSeries)
-    .setOptions({
-      title: title,
-      vAxes: {
-        0: { title: 'Area [km2]' },
-        1: {
-          title: '% Area Change (Ref: 2001-2005)',
-          baselineColor: 'transparent'
-          }
-      },
-      hAxis: {title: 'Year', gridlines: {count: 1}},
-      interpolateNulls: true,
-      pointSize: 1,
-      lineWidth: 1,
-      series: {
-        0: {targetAxisIndex: 0},
-        1: {targetAxisIndex: 1}
-      }        
-    });
-  //Create summary panel
-  var Info = ui.Label('Forest statistics during ' + app.defaultYear );
-  resultPanel.widgets().set(1, Info);  
-  resultPanel.widgets().set(2, forestChart);
-  resultPanel.style().set('shown',true);
-  resultPanel.style().set('height','400px');
-
-  // Visualization and animation parameters.
-  var params = {
-    crs: 'EPSG:3857',
-    framesPerSecond: 1,
-    region: alldata.data.Polygon,
-    bands: ['forest'],
-    min: 0.0,
-    max: 1.0,
-    palette: ['silver', 'white', 'green', 'darkgreen'],
-    dimensions: 512
-  };
-  resultPanel.widgets().set(3, ui.Thumbnail(alldata.TimeSeriesMap, params));
-
+  //
+  var result = CalcForestArea();
+  var areas, title, area;
   //plot outline
-  mapPanel.add(ui.Map.Layer(ee.Geometry(alldata.data.Outline), {}, 'Region'));
-  
+  mapPanel.add(ui.Map.Layer(ee.Geometry( ee.Dictionary(result.get(0)).get('Outline')), {}, 'Region'));
+  //Animation		
+  var TimeSeriesMap = ee.ImageCollection.fromImages(result.map(function(r){return ee.Dictionary(r).get('Map');}));
   //forest mask
-  var LE = ee.Number( time_range.length )
-  var forest_mask = alldata.TimeSeriesMap
-                    .map(function(f) {return f.select('forest').unmask(0)})
-                    .sum().gt(0.0)
-                    .rename('forest_mask');
+  var forest_mask = TimeSeriesMap
+    .map(function(f) {return f.select('forest').unmask(0)})
+    .sum().gt(0.0)
+    .rename('forest_mask');
 
   //apply forest mask
-  alldata.TimeSeriesMap = alldata.TimeSeriesMap
-      .map(function(f) {return f.unmask(0).updateMask(forest_mask)})
+  TimeSeriesMap = TimeSeriesMap
+    .map(function(f) {return f.unmask(0).updateMask(forest_mask)});
 
-  //Calculate time series
-  var combi_reducer = ee.Reducer.mean()
-                    .combine(ee.Reducer.minMax(), '', true)
-                    .combine(ee.Reducer.variance(), '', true)
-                    .combine(ee.Reducer.stdDev(), '', true)
-                    .combine(ee.Reducer.percentile([0,25,50,75,99]), '', true)
-                    .combine(ee.Reducer.count(), '', true);
-
-
-  var timeseriesmap = alldata.TimeSeriesMap
-      .reduce(combi_reducer)
-      .selfMask();
-
-  //add permanent
-  timeseriesmap = timeseriesmap.addBands(
-      (timeseriesmap.select('forest_count').eq(LE)).gt(0.0)
-      .updateMask(forest_mask)
-      .rename('forest_permanent')
-    );
-
-  //add forest change band
-  var forest_reference,forest_exam_range;
-  var forest_loss, forest_gain;
-  
-  //define reference forest level
-  forest_reference = alldata.TimeSeriesMap
-      .select('forest')
-      .filterMetadata('year', 'equals',parseInt(app.defaultYear)).first();
+  //Update info panel
+  resultPanel.widgets().set(1, ui.Label('Calculating Time Series...'));
+  resultPanel.style().set('shown',true);
   //
-  forest_exam_range = alldata.TimeSeriesMap
-      .select('forest')
-      .filterMetadata('year', 'greater_than',parseInt(app.defaultYear));
-  //gain
-  forest_gain = forest_exam_range
-      .map(function(img) {return img.subtract(forest_reference)})
-      .max().gt(0).rename('forest_gain');
-  //loss
-  forest_loss = forest_exam_range
-      .map(function(img) {return img.subtract(forest_reference)})
-      .min().lt(0).multiply(-1.0).rename('forest_loss');
+  result.evaluate( function(data, fail){
+    //clear result Panel
+    ClearresultPanel();
+    if(typeof fail !== 'undefined'){
+      HELP.show_help_panel('Error during the time series calculation:' + fail);
+    }else{
+      //5-year average
+      area = data.map(function(d){return d.area});
+      var pctchange=[];
+      var gamma2;
+      var beta2 = AVG.Average5( area , 2001-1984);      
+      for(var i=0;i<area.length;i++){
+        gamma2 = AVG.Average5(area,i);
+        pctchange.push( (beta2-gamma2)/beta2*100 );
+      }
       
-  var forest_change = forest_gain.add(forest_loss).rename('forest_change');
-  
-  timeseriesmap = timeseriesmap.addBands( forest_mask.updateMask(forest_mask.neq(0)) );
-  timeseriesmap = timeseriesmap.addBands( forest_loss.updateMask(forest_loss.neq(0)) );
-  timeseriesmap = timeseriesmap.addBands( forest_gain.updateMask(forest_gain.neq(0)) );
-  timeseriesmap = timeseriesmap.addBands( forest_change );
+      areas = [area, pctchange];
+      //Print title
+      if(app.defaultAssetName.length===0){
+        title = 'Forest Area Over Time over ' + app.defaultCountry + '.' + app.defaultRegion +
+          ' during '+ app.defaultYear;
+      }else{
+        title = 'Forest Area Over Time over ' + app.defaultAssetName + '.' + app.RegionID + 
+          ' during '+ app.defaultYear;
+      }
+      var time_range = data.map(function(f){return f.date});
       
-  //
-  //Update legend
-  LEGEND.setLegend(TimeSeriesParam, GUIPREF);
+      var forestChart = ui.Chart.array.values(areas, 1, time_range)
+        .setChartType('LineChart')
+        .setSeriesNames(app.defaultLayer.trendSeries)
+        .setOptions({
+          title: title,
+          vAxes: {
+          0: { title: 'Area [km2]' },
+          1: {
+            title: '% Area Change (Ref: 2001-2005)',
+            baselineColor: 'transparent'}
+          },
+          hAxis: {title: 'Year', gridlines: {count: 1}},
+          interpolateNulls: true,
+          pointSize: 1,
+          lineWidth: 1,
+          series: {
+            0: {targetAxisIndex: 0},
+            1: {targetAxisIndex: 1}
+          }        
+        });
+      //Create summary panel
+      var Info = ui.Label('Forest statistics during ' + app.defaultYear );
+      resultPanel.widgets().set(1, Info);  
+      resultPanel.widgets().set(2, forestChart);
+      resultPanel.style().set('shown',true);
+      resultPanel.style().set('height','400px');
+      // Visualization and animation parameters.
+      var params = {
+        crs: 'EPSG:3857',
+        framesPerSecond: 1,
+        region: data[0].Polygon,
+        bands: ['forest'],
+        min: 0.0,
+        max: 1.0,
+        palette: ['silver', 'white', 'green', 'darkgreen'],
+        dimensions: 512
+      };
+      resultPanel.widgets().set(3, ui.Thumbnail(TimeSeriesMap, params));
+    
+      var LE = ee.Number( time_range.length );
+      //Calculate time series
+      var combi_reducer = ee.Reducer.mean()
+        .combine(ee.Reducer.minMax(), '', true)
+        .combine(ee.Reducer.variance(), '', true)
+        .combine(ee.Reducer.stdDev(), '', true)
+        .combine(ee.Reducer.percentile([0,25,50,75,99]), '', true)
+        .combine(ee.Reducer.count(), '', true);
 
-  mapPanel.add(ui.Map.Layer(timeseriesmap, TimeSeriesParam.visParam, TimeSeriesParam.name,true));
-  mapPanel.add(ui.Map.Layer(alldata.TimeSeriesMap, {}, 'Time Series',false));
+      var timeseriesmap = TimeSeriesMap
+        .reduce(combi_reducer)
+        .selfMask();
+
+      //add permanent
+      timeseriesmap = timeseriesmap.addBands(
+        (timeseriesmap.select('forest_count').eq(LE)).gt(0.0)
+        .updateMask(forest_mask)
+        .rename('forest_permanent')	);
+
+      //add forest change band
+      var forest_reference,forest_exam_range;
+      var forest_loss, forest_gain;
+      //define reference forest level
+      forest_reference = TimeSeriesMap
+        .select('forest')
+        .filterMetadata('year', 'equals',parseInt(app.defaultYear)).first();
+      //
+      forest_exam_range = TimeSeriesMap
+        .select('forest')
+        .filterMetadata('year', 'greater_than',parseInt(app.defaultYear));
+      //gain
+      forest_gain = forest_exam_range
+        .map(function(img) {return img.subtract(forest_reference)})
+        .max().gt(0).rename('forest_gain');
+      //loss
+      forest_loss = forest_exam_range
+        .map(function(img) {return img.subtract(forest_reference)})
+        .min().lt(0).multiply(-1.0).rename('forest_loss');
+        
+      var forest_change = forest_gain.add(forest_loss).rename('forest_change');
+      
+      timeseriesmap = timeseriesmap.addBands( forest_mask.updateMask(forest_mask.neq(0)) );
+      timeseriesmap = timeseriesmap.addBands( forest_loss.updateMask(forest_loss.neq(0)) );
+      timeseriesmap = timeseriesmap.addBands( forest_gain.updateMask(forest_gain.neq(0)) );
+      timeseriesmap = timeseriesmap.addBands( forest_change );
+      //Update legend
+      LEGEND.setLegend(TimeSeriesParam, GUIPREF);
+  
+      mapPanel.add(ui.Map.Layer(timeseriesmap, TimeSeriesParam.visParam, TimeSeriesParam.name,true));
+      mapPanel.add(ui.Map.Layer(TimeSeriesMap, {}, 'Time Series',false));
+    }//end if...else
+  });//
 };
 
 /****************************************************************************************
@@ -534,10 +395,44 @@ var exportMap = function(){
   HELP.show_help_panel('Generating Export Task for '+ app.defaultCountry + ' in ' + app.defaultYear )
   
   var description = 'forest_map_for_' + app.RegionID + '_' + app.defaultYear;
-  var poly = AOI.GetClippingPolygon(app.defaultCountry, app.defaultRegion, app.defaultAssetName, app.RegionID);  
+  var poly = AOI.GetClippingPolygon(GUI_AOI.countryName, GUI_AOI.regionName, 
+    GUI_AOI.AssetName, GUI_AOI.RegionID, GUI_AOI.selectedGEEAsset());
   
   EXPORT_MAP.exportMap(mapPanel, description, app.defaultLayer.AreaScale, poly.polygon, EXPORT_CRS)
 }
+
+/*=======================================================================================
+                                           GUI
+=======================================================================================*/
+
+/*****************************************************************************************
+ * Map panel configuration
+ *****************************************************************************************/
+ui.root.setLayout(ui.Panel.Layout.flow('horizontal'));
+
+/****************************************************************************************
+* GUI: Create a control panel.
+*****************************************************************************************/
+var header = ui.Label('SDG 15.1.1: Forest Area Change', GUIPREF.TITLE_STYLE);
+var subheader = ui.Label(' ', GUIPREF.SUBTITLE_STYLE);
+var toolPanel = ui.Panel([header, subheader], 'flow', GUIPREF.PANEL_STYLE);
+
+/*****************************************************************************************
+* GUI: Create a map panel.
+*****************************************************************************************/
+var mapPanel = ui.Map();
+mapPanel.add(HELP.help_panel);
+// Take all tools off the map except the zoom and mapTypeControl tools.
+mapPanel.setControlVisibility({all: true, zoomControl: true, mapTypeControl: true});
+
+mapPanel.centerObject( ee.Geometry(app.defaultLocation.polygon) );
+
+/****************************************************************************************
+* GUI: Create a plotting/results panel.
+****************************************************************************************/
+var resultPanel = ui.Panel([],  'flow', 
+  {border: '1px solid black', width: '300px', height: '200px', position: 'bottom-right', shown:false } );
+resultPanel.add(ui.Label('Forest Area Over Time', {fontWeight: 'bold', color:GUIPREF.TEXTCOLOR}))
 
 /****************************************************************************************
 * Define the pulldown menu.  Changing the pulldown menu changes the displayed year
@@ -558,55 +453,13 @@ var yearPanel = ui.Panel([
   ui.Panel.Layout.flow('horizontal',true), GUIPREF.CNTRL_PANEL_STYLE);
 yearSelect.setValue(app.defaultLayer.availableYears[0]);
 
-/****************************************************************************************
-* Define the pulldown menu.  Changing the pulldown menu changes the displayed location
-*****************************************************************************************/
-// Create the location pulldown.
-var locations = Object.keys(AOI.CountryLoc);
-var index = locations.sort().indexOf(app.defaultCountry);
-
-var countrySelect = ui.Select({
-  items: locations.sort(),
-  value: locations[index],
-  style: GUIPREF.SELECT_STYLE,
-  onChange: function(value) {
-    app.defaultLocation = AOI.CountryLoc[value];
-    app.defaultCountry = value;
-    //
-    /*app.defaultLocation.polygon = ee.Geometry(app.defaultLocation.polygon).getInfo();
-    app.defaultLocation.lat = ee.Number(app.defaultLocation.lat).getInfo();
-    app.defaultLocation.lon = ee.Number(app.defaultLocation.lon).getInfo();*/
-	//Get administrative regions
-  var RegionLst = AOI.RegionsList(app.defaultCountry);
-	app.defaultRegion = 'All';
-	var regionSelect = ui.Select({
-      items: RegionLst,
-      value: RegionLst[0],
-      style: GUIPREF.SELECT_STYLE,
-      onChange: function(value) {
-        app.defaultRegion = value;
-      }
-    });
-    predefLocPanel.widgets().set(2,regionSelect);
-	
-    //Update center of map
-    mapPanel.centerObject( ee.Geometry(app.defaultLocation.polygon) );
-  }
-});
-
-var RegionLst = AOI.RegionsList(app.defaultCountry);
-var regionSelect = ui.Select({
-  items: RegionLst,
-  value: RegionLst[0],
-  style: GUIPREF.SELECT_STYLE,
-  onChange: function(value) {
-    app.defaultRegion = value;
-    //clear map
-    ClearMap(); 
-    //clear result Panel
-    ClearresultPanel();        
-  }
-});
+/******************************************************************************************
+* GUI: Selection of a predefined shape.
+******************************************************************************************/
+GUI_AOI.createGUI(mapPanel, HELP, AOI, GUIPREF, app.defaultCountry, app.defaultRegion, false);
+var LocationPanel = GUI_AOI.LocationPanel;
+mapPanel.centerObject(ee.Geometry(GUI_AOI.Location.polygon));
+GUI_AOI.setAsset(app.defaultAssetName,  app.defaultRegionID);
 
 /******************************************************************************************
 * GUI: dataset selection.
@@ -644,6 +497,7 @@ var evi_min_textbox = ui.Textbox({
   style: GUIPREF.EDIT_STYLE,
   onChange: function(text) {
     app.EVI_min = Number(text);
+    MODEL_FOREST.set_EVI_Threshold(app.EVI_min, app.EVI_max);
     HELP.show_help_panel('EVI Min ' + app.EVI_min );
   }
 });
@@ -653,6 +507,7 @@ var evi_max_textbox = ui.Textbox({
   style: GUIPREF.EDIT_STYLE,
   onChange: function(text) {
     app.EVI_max = Number(text);
+    MODEL_FOREST.set_EVI_Threshold(app.EVI_min, app.EVI_max);
     HELP.show_help_panel('EVI Max ' + app.EVI_max );
   }
 });
@@ -667,86 +522,6 @@ var IndicePanel = ui.Panel([ui.Label('Index:', GUIPREF.LABEL_T_STYLE),   IndiceS
   ui.Button('?',  function() {HELP.show_help_panel(['EVI: Enhanced Vegetation Index. Range: 0.2-0.8.\nNDVI: Normalized Difference Vegetation Index.'])}, false, GUIPREF.HELP_BTN_STYLE)], 
   ui.Panel.Layout.flow('horizontal',true), GUIPREF.CNTRL_PANEL_STYLE);
 
-
-/****************************************************************************************
-* GUI: Text box for the use of an asset file
-*****************************************************************************************/
-GUIPREF.EDIT_STYLE.width = '200px';
-var asset_textbox = ui.Textbox({
-  placeholder: 'users/<username>/....',
-  style: GUIPREF.EDIT_STYLE,
-  onChange: function(text) {
-    app.defaultAssetName = text;
-    //clear map
-    ClearMap(); 
-    //clear result Panel
-    ClearresultPanel();
-
-    if(app.defaultAssetName.length>0 && app.RegionID>=0){
-      var poly = AOI.GetClippingPolygon(app.defaultCountry, app.defaultRegion, app.defaultAssetName, app.RegionID);
-      mapPanel.add(ui.Map.Layer(poly.outline, {}, 'Region'));		
-      HELP.show_help_panel('New asset to use ' + app.defaultAssetName );
-      //
-      active_preshape.setValue(false);
-      active_gee_asset.setValue(true);
-    }else{
-      active_preshape.setValue(true);
-      active_gee_asset.setValue(false);
-    }
-  }
-});
-
-GUIPREF.EDIT_STYLE.width = '50px';
-var asset_LID_textbox = ui.Textbox({
-  placeholder: 'Layer ID',
-  style: GUIPREF.EDIT_STYLE,
-  onChange: function(text) {
-    if((typeof text=='string' && text.length>0) || text>=0){
-      app.RegionID = Number(text);
-    }else{
-      app.RegionID = -1;
-    }
-    //clear map
-    ClearMap(); 
-    //clear result Panel
-    ClearresultPanel();
-
-    if(app.defaultAssetName.length>0 && app.RegionID>=0){
-      var poly = AOI.GetClippingPolygon(app.defaultCountry, app.defaultRegion, app.defaultAssetName, app.RegionID);
-      mapPanel.add(ui.Map.Layer(poly.outline, {}, 'Region'));	
-      HELP.show_help_panel('New Region ID:' + app.RegionID);    
-      //
-      active_preshape.setValue(false);
-      active_gee_asset.setValue(true);
-    }else{
-      active_preshape.setValue(true);
-      active_gee_asset.setValue(false);
-    }
-  }
-});
-
-
-/******************************************************************************************
-* GUI: Selection of a predefined shape.
-******************************************************************************************/
-var helppreshape = ui.Button('?',  
-function() {HELP.show_help_panel('Select the Region Of Interest, based on USDOS LSIB. Regional levels are defined from GAUL level 1, 2008.')}, 
-false, GUIPREF.HELP_BTN_STYLE);
-var active_preshape = ui.Checkbox( {label:'Predefined:', value: true, style: GUIPREF.CKBOX_STYLE} );
-active_preshape.setDisabled(true);
-var predefLocPanel = ui.Panel( [active_preshape,countrySelect, regionSelect,helppreshape],
-  ui.Panel.Layout.flow('horizontal',true), GUIPREF.CNTRL_PANEL_STYLE);
-
-var helpgeeasset = ui.Button('?',  function() {HELP.show_help_panel('Select a region from your GEE ASSETS with the defined layer ID.')}, false, GUIPREF.HELP_BTN_STYLE);
-var active_gee_asset = ui.Checkbox( {label:'GEE ASSET Shapefile:', value: false, style: GUIPREF.CKBOX_STYLE} );
-active_gee_asset.setDisabled(true);
-var assetPanel = ui.Panel([
-    active_gee_asset, 
-    ui.Panel([asset_textbox, asset_LID_textbox, helpgeeasset],ui.Panel.Layout.flow('horizontal',true),GUIPREF.CNTRL_PANEL_STYLE)
-  ],
-  'flow', GUIPREF.CNTRL_PANEL_STYLE);
-
-var LocationPanel = ui.Panel([ui.Label( 'Location:', GUIPREF.LABEL_T_STYLE),  predefLocPanel, assetPanel], 'flow', GUIPREF.CNTRL_PANEL_STYLE);
 
 /******************************************************************************************
 * GUI: Create the legend.

@@ -85,10 +85,13 @@ exports.RegionPolygon = function(country, region)
 /****************************************************************************************
 * Get clipping polygon from USGS dataset or shapefile
 *****************************************************************************************/
-exports.GetClippingPolygon = function (country, region, assetname, regionid) {
+exports.GetClippingPolygon = function (country, region, assetname, regionid, selectedGEEAsset) {
   var poly;
-  
-  if(assetname.length>0 && regionid>=0){
+  if(typeof selectedGEEAsset == 'undefined'){
+    selectedGEEAsset = false;
+  } 
+  //
+  if(selectedGEEAsset && assetname.length>0 && regionid>=0){
     var Countrydataset = ee.Collection.loadTable(assetname);
 
     //merge all features
