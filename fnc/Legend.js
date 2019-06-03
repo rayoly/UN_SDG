@@ -77,9 +77,19 @@ exports.setLegend = function(layer, GUIPREF, image_band, geometry) {
       var theMinMax = image_band.rename('band').reduceRegion({
         reducer:ee.Reducer.max().combine(ee.Reducer.min(),'',true),
         geometry:geometry,
+        maxPixels: 1e12,
         scale:layer.AreaScale}).getInfo();
-      layer.visParam.min = theMinMax.band_min.toFixed(2);
-      layer.visParam.max = theMinMax.band_max.toFixed(2);
+        
+      if( Math.abs(theMinMax.band_min) < 1 ){
+        layer.visParam.min = theMinMax.band_min.toExponential(2);
+      }else{
+        layer.visParam.min = theMinMax.band_min.toFixed(2);
+      }
+      if( Math.abs(theMinMax.band_max) < 1 ){
+        layer.visParam.max = theMinMax.band_max.toExponential(2);
+      }else{
+        layer.visParam.max = theMinMax.band_max.toFixed(2);
+      }
     }
     
     // Create the color bar for the legend.
@@ -108,4 +118,5 @@ exports.setLegend = function(layer, GUIPREF, image_band, geometry) {
         ui.Label(layer.visParam.max, GUIPREF.LEGEND_TEXT_STYLE)], 
       ui.Panel.Layout.Flow('horizontal'), {}));
   }
+  return layer;
 }

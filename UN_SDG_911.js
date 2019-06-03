@@ -112,17 +112,21 @@ var ClearresultPanel = function(){
 /******************************************************************************
  * 
 *******************************************************************************/
-var CalcRAI = function(Year, CountryAbbr, lRegion){
+var CalcRAI = function(Year, CountryAbbr, lRegion, isTrend){
   
   var yearRange, regionRange;
   var yearly_trend = true;
-  if(app.rangeType=='Yearly'){
+  if(isTrend===false){
     yearly_trend = true;
     yearRange = Year;
-    regionRange = lRegion;//[app.defaultRegion];
+    regionRange = [app.defaultRegion];
+  }else if(app.rangeType=='Yearly'){
+    yearly_trend = true;
+    yearRange = Year;
+    regionRange = [app.defaultRegion];
   }else if(app.rangeType=='Regional' && GUI_AOI.selectedGEEAsset()===false){
     yearly_trend = false;
-    HELP.show_help_panel('Regional trend for the year ' + app.defaultYear);
+    //HELP.show_help_panel('Regional trend for the year ' + app.defaultYear);
     //Years and months to consider
     yearRange = [app.defaultYear];
     regionRange = lRegion;//app.RegionLst.slice(1);//skip the first "region" which is "all"
@@ -259,17 +263,19 @@ var CalcRAI = function(Year, CountryAbbr, lRegion){
         //img = img.addBands( access );
         //Calculate stats
         var map_scale = ee.Image(img).get('scale');
-        var stat_total = img.reduceRegion({reducer:'sum', geometry: poly, scale: map_scale, maxPixels: 1e12}).get('total');
-        var stat_rural = rural.reduceRegion({reducer:'sum', geometry: poly, scale: map_scale, maxPixels: 1e12}).get('rural');
-        var stat_access = access.reduceRegion({reducer:'sum', geometry: poly, scale: map_scale, maxPixels: 1e12}).get('access');
-        
-        var rai = ee.Number(stat_access).multiply(100).divide(stat_rural);
+        img = img.addBands( rural ).addBands( access );
+        var stat = ee.Dictionary(ee.Algorithms.If( ee.Number(map_scale).lt(100000),
+          img.reduceRegion({reducer:'sum', geometry: poly, scale: map_scale, maxPixels: 1e12}),
+          ee.Dictionary({total:0,access:0, rural:0})));
+        var rai = ee.Number(stat.get('access')).multiply(100).divide(stat.get('rural'));
         return img
-          .addBands( rural )
-          .addBands( access )
-          .set('total_pop',stat_total,'rural_pop',stat_rural,'access_pop',stat_access,'RAI',rai)
-          .set('source', mask.get('source'));
-      });
+          .set('total_pop',stat.get('total'),
+          'rural_pop',stat.get('rural'),
+          'access_pop',stat.get('access'),
+          'RAI',rai,
+          'source', mask.get('source'));
+      }); 
+      
       //
       //create map of RAI
       var rai = ee.List(PopMap.aggregate_array('RAI'));
@@ -333,7 +339,7 @@ var DisplayPopLayer = function(){
   //-----------------------------------------------------------------------------------
   var countryAbbr = AOI.countryCode(GUI_AOI.countryName);
   
-  var alldata = CalcRAI([app.defaultYear], countryAbbr, [GUI_AOI.regionName]);
+  var alldata = CalcRAI([app.defaultYear], countryAbbr, [GUI_AOI.regionName], false);
   if( Object.keys(alldata).length===0 ){return;}
   var data = ee.Dictionary(alldata.data.get(0));
 
@@ -384,7 +390,7 @@ var DisplayPopLayer = function(){
     ROI = 'ShapeFile';
   }
   //Generate information text 
-  var text1='', text2='', text3='';
+  var text1='', text3='';
   //print panel
   resultPanel.style().set('shown',true);
   resultPanel.widgets().set(1, ui.Label('Computing...'));
@@ -397,39 +403,50 @@ var DisplayPopLayer = function(){
       //clear panel
       resultPanel.clear();
       //
+      var Gbl_dataTable = [ ['Dataset'], ['# inhab.'] ];
+      var Rural_dataTable = [ ['Dataset','# inhab.','% of Total','Rural Mask'] ];
+      var RAI_dataTable = [ ['Dataset', '# inhab.', '% or Rural'] ];
+      var n=0;
       for(var key in result.DB_description){
         if(result.total_stats[key]>0){
+          //Global Population
           text1 = text1 + '* ' + result.DB_description[key] + ': ' + (result.total_stats[key]).toFixed(0) + ' inhab.\n';
+          Gbl_dataTable[0].push( result.DB_description[key] );
+          Gbl_dataTable[1].push( result.total_stats[key].toFixed(0) );
           
+          //Rural Population
           var p1 = 100.0*(result.rural_stats[key])/(result.total_stats[key]);
-          text2 = text2 + '* ' + result.DB_description[key] + ': ' + (result.rural_stats[key]).toFixed(0) + ' inhab. (' + 
-            p1.toFixed(2) + '% of the total pop.) ' + ' [' + result.ruralSource[key] + ']\n';     
-              
+          Rural_dataTable[n+1] = [result.DB_description[key], (result.rural_stats[key]).toFixed(0), p1.toFixed(2), result.ruralSource[key] ];
+         
+          //RAI
           if(result.rural_stats[key]>0){
             var r1 = 100.0*(result.pop_within_dist[key])/(result.rural_stats[key]);
             text3 = text3 + '* ' + result.DB_description[key] + ': ' + (result.pop_within_dist[key]).toFixed(0) + ' inhab. (' +
               r1.toFixed(2) + '% of the rural pop.) \n';
+            RAI_dataTable[n+1] = [result.DB_description[key], (result.pop_within_dist[key]).toFixed(0), r1.toFixed(2) ];              
           }
+           n++;
         }
       }
       //------------------------------------------------------------- Total population stat
       resultPanel.widgets().set(1,
         ui.Label('Global Population Count in ' + ROI + ' in ' + result.year + ': ', 
         {fontWeight: 'bold', color:GUIPREF.TEXTCOLOR}));    
-      resultPanel.widgets().set(2,ui.Label(text1,{color:GUIPREF.TEXTCOLOR, whiteSpace:'pre'}));
-  
+      //resultPanel.widgets().set(2,ui.Label(text1,{color:GUIPREF.TEXTCOLOR, whiteSpace:'pre'}));
+      resultPanel.widgets().set(3, ui.Chart(Gbl_dataTable, 'Table', {}));
       //------------------------------------------------------------- Rural population stat
-      resultPanel.widgets().set(3, ui.Label(
+      resultPanel.widgets().set(4, ui.Label(
         'Rural Population Count in ' + ROI + ' in ' + result.year + ': ', 
         {fontWeight: 'bold', color:GUIPREF.TEXTCOLOR}) );
-      resultPanel.widgets().set(4,ui.Label(text2,{color:GUIPREF.TEXTCOLOR, whiteSpace:'pre'}));
-  
+      //resultPanel.widgets().set(5,ui.Label(text2,{color:GUIPREF.TEXTCOLOR, whiteSpace:'pre'}));
+      resultPanel.widgets().set(6, ui.Chart(Rural_dataTable, 'Table', {}));
       //------------------------------------------------------------- RAI
       if(text3.length>0){
-        resultPanel.widgets().set(5,ui.Label(
+        resultPanel.widgets().set(7,ui.Label(
           'Proportion living within ' + (app.defaultDist2Road/1000) + 'km of a road: ',
           {fontWeight: 'bold', color:GUIPREF.TEXTCOLOR}));  
-        resultPanel.widgets().set(6,ui.Label(text3,{color:GUIPREF.TEXTCOLOR, whiteSpace:'pre'}));
+        //resultPanel.widgets().set(8,ui.Label(text3,{color:GUIPREF.TEXTCOLOR, whiteSpace:'pre'}));
+        resultPanel.widgets().set(9, ui.Chart(RAI_dataTable, 'Table', {}));
       }
     }
   });
@@ -475,11 +492,11 @@ var plotTrend = function(){
   ClearresultPanel();
   //
   var options;
-  var dataTable;
+  var dataTable, summaryTable;
   var i;
-  //
+  var RAI, total_stats, rural_stats, listYear;
   var alldata = CalcRAI(app.availableYears, AOI.countryCode(GUI_AOI.countryName), 
-    GUI_AOI.RegionLst.slice(1));//skip the first "region" which is "all"
+    GUI_AOI.RegionLst.slice(1), true);//skip the first "region" which is "all"
   if( Object.keys(alldata).length===0 ){return;}
   //AOI: Outline
   var Outline = alldata.data.map(function(r){return ee.Geometry(ee.Dictionary(r).get('Outline'));}).flatten();
@@ -493,17 +510,34 @@ var plotTrend = function(){
   alldata.data.evaluate( function(data){
     //Clear Panel
     resultPanel.clear();
-    var RAI, total_stats, rural_stats;
     if(app.rangeType=='Yearly' || GUI_AOI.selectedGEEAsset()===true){
       RAI = data.map(function(d){return d.RAI});
       total_stats = data.map(function(d){return d.total_stats});
       rural_stats = data.map(function(d){return d.rural_stats});
+      listYear = data.map(function(d){return d.year});
       //Create series name
       dataTable = [ ['Year'] ];	
+      summaryTable = [ ['Dataset','Year','# Total inhab.','# Rural inhab.','% of Total','Rural Mask','RAI (%)'] ];
       i=1;
+      var n=0;
       for(var key in data[0].DB_description){
         dataTable[0][i] = data[0].DB_description[key];
         i++;
+        //
+        data.map( function(res){
+          var r1 = 100*(res.rural_stats[key])/(res.total_stats[key]);
+          if(res.total_stats[key]>0){
+            summaryTable[n+1] = [res.DB_description[key], 
+              res.year,
+              (res.total_stats[key]).toFixed(0),         
+              (res.rural_stats[key]).toFixed(0), 
+              r1.toFixed(2),
+              res.ruralSource[key],
+              (res.RAI[key]).toFixed(2), 
+              ];
+            n++;
+          }
+        });
       }
       //Total Population
       var PopArray = Dict2Array(app.availableYears, total_stats, dataTable);
@@ -538,6 +572,9 @@ var plotTrend = function(){
       var RAIChart = ui.Chart(RAIArray, 'ColumnChart', options);
       resultPanel.widgets().set(3, RAIChart);
       
+      //-------------------------------------------------------------------------
+      resultPanel.widgets().set(4, ui.Chart(summaryTable, 'Table', {}));
+      
       // Visualization and animation parameters.
       var params = {
         crs: app.EXPORT_CRS,
@@ -561,7 +598,6 @@ var plotTrend = function(){
       app.Mosaic_layer.visParam.bands = Object.keys(data[0].DB_description)[0];
       mapPanel.add(ui.Map.Layer( alldata.TimeSeriesMap.mosaic(), 
         app.Mosaic_layer.visParam, app.Mosaic_layer.name, true));
-        
       //
       mapPanel.add(ui.Map.Layer( alldata.TimeSeriesMap, {}, 'Regional RAI', false));      
       
@@ -569,9 +605,14 @@ var plotTrend = function(){
       LEGEND.setLegend(app.Mosaic_layer, GUIPREF);
       //Create series name
       dataTable = [ ['Region'] ];	
+      summaryTable = [[]];
+      summaryTable[0] = [];
+      summaryTable[1] = [];
       i=1;
-      for(key in data[0].DB_description){
-        dataTable[0][i] = data[0].DB_description[key];
+      for(var key1 in data[0].DB_description){
+        dataTable[0][i] = data[0].DB_description[key1];
+        summaryTable[0][i-1] = data[0].DB_description[key1];
+        summaryTable[1][i-1] = data[0].ruralSource[key1];
         i++;
       }
       var RegionalRAIArray = Dict2Array(data.map(function(d){return d.region}), RAI, dataTable);
@@ -587,8 +628,12 @@ var plotTrend = function(){
       var chart = ui.Chart(RegionalRAIArray, 'ColumnChart', options);
       resultPanel.widgets().set(1, ui.Label('Regional Road access statistics during ' + app.defaultYear + ':\n'));
       resultPanel.widgets().set(2, chart);
+      resultPanel.widgets().set(3, ui.Label('Rural masks:'));
+      resultPanel.widgets().set(4, ui.Chart(summaryTable, 'Table', {}));
+      resultPanel.widgets().set(5, ui.Label('RAI (%) during ' + app.defaultYear));
+      resultPanel.widgets().set(6, ui.Chart(RegionalRAIArray, 'Table', {}));
       resultPanel.style().set('shown',true);
-      resultPanel.style().set('height','300px');
+      resultPanel.style().set('height','400px');
     }
   });
   //Add region outline to map  

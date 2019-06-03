@@ -28,7 +28,7 @@ Requires: AOI, helpBox
 
 exports.Location = {};
 exports.RegionLst = [];
-exports.ROAD_DATASET = {};
+exports.ROAD_DATASET = {data:[], scale:100, coef:1};
 
 exports.countryName = '';
 exports.regionName = '';
@@ -38,49 +38,47 @@ exports.RegionID = -1;
 
 var gui = {};
 var useRoad = false;
+var road_data;
 /****************************************************************************************
 *  
 *****************************************************************************************/
 var retrieve_road_network = function(mapPanel, AOI, country, region, assetname, regionid){
   var poly = AOI.GetClippingPolygon(country, region, assetname, regionid).polygon; 
   var road_asset = 'users/rayoly/' + country.toUpperCase() +'_ROADS';
-  print('Loading road asset:' + road_asset); 
-  
-  var road_data;
-  ee.Collection.loadTable(road_asset).first().evaluate( function(f, fail){
+  print('Loading road asset:' + road_asset + ' for ' + country + '/' + region + ' or ' + assetname + '/' + regionid); 
+  var prop = {
+    properties: ['code'],
+    reducer: ee.Reducer.first()
+  };
+  exports.ROAD_DATASET.data = ee.Collection.loadTable(road_asset);
+  var propnames = exports.ROAD_DATASET.data.first().propertyNames();
+
+  propnames.evaluate( function(success, fail){
     if(typeof fail !== 'undefined'){
-      print('Road dataset not found!');
-      road_data = ee.FeatureCollection([ee.Geometry.LineString([0,0,0.1,0.1])]).set('code',1);
-    }else{
-      road_data = ee.Collection.loadTable(road_asset);
+      gui.HELP.show_help_panel('The road dataset for the selected region was not found');
+      exports.ROAD_DATASET.data = ee.FeatureCollection([ee.Geometry.LineString([0,0,0.1,0.1])]).set('code',1);
+	  propnames = exports.ROAD_DATASET.data.first().propertyNames();
     }
     //
-    exports.ROAD_DATASET = {data:road_data, scale:100, coef:1};
-    var propnames = exports.ROAD_DATASET.data.first().propertyNames();
-    var prop = {
-      properties: ['code'],
-      reducer: ee.Reducer.first()
-    };
-    //mapPanel.add(ui.Map.Layer(ee.Geometry(poly), {}, 'Region'));
     exports.ROAD_DATASET.data = ee.Image(exports.ROAD_DATASET.data
       .filter(ee.Filter.bounds(poly))
       .filter(ee.Filter.notNull(propnames))
       .reduceToImage(prop));
-  });
+  });  
 };
 /****************************************************************************************
 * Define panel for selecting the AOI
 *****************************************************************************************/
-exports.createGUI = function(mapPanel, HELP, AOI, GUIPREF, country, region, getroad){
+exports.createGUI = function(mapPanel, HELP, AOI, GUIPREF, country, region, useRoad){
   //default values
   exports.Location = AOI.CountryLoc[country];
   exports.RegionLst = AOI.RegionsList(country); 
   exports.regionName = region;
-  exports.countryName = country;  
-  if(typeof getroad == 'undefined'){
-    getroad = false;
+  exports.countryName = country;
+  gui.HELP = HELP;
+  if(typeof useRoad == 'undefined'){
+    useRoad = false;
   }
-  useRoad = getroad;
   //
   if(useRoad){
     retrieve_road_network(mapPanel, AOI, exports.countryName , exports.regionName, exports.AssetName, exports.RegionID);

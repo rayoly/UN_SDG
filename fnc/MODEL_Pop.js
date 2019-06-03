@@ -31,8 +31,11 @@ var POP = { GHSL: {data:ee.ImageCollection('JRC/GHSL/P2016/POP_GPW_GLOBE_V1'), s
             WORLDPOP: {data:ee.ImageCollection("WorldPop/POP"), rural_mask:[], scale: 100},//100x100, 3arcsec
             GPW: {data:ee.ImageCollection("CIESIN/GPWv4/population-count"), scale: 1000}, //1000x1000, 30arcsec
             HRSL: {data:ee.ImageCollection.fromImages(ee.List([ee.Image('users/rayoly/population_AF_2018-10-01')
-              .set('system:time_start',ee.Date.fromYMD(2018, 3, 1 ).millis())
-              .set('system:time_end',ee.Date.fromYMD(2018, 12, 31 ).millis())])),	scale: 30}, //1 arcsec=30m
+                .set('system:time_start',ee.Date.fromYMD(2018, 3, 1 ).millis())
+                .set('system:time_end',ee.Date.fromYMD(2018, 12, 31 ).millis())]))
+              .set('date_range',[
+                ee.Date.fromYMD(2018,3,1).millis(),
+                ee.Date.fromYMD(2018,12,31).millis()]),	scale: 30}, //1 arcsec=30m
             };
 
 var empty_mask = ee.ImageCollection([ee.Image([])])
@@ -60,70 +63,115 @@ exports.setSNIC = function(size, compactness){
 exports.setMaxRuralDensity = function(m){
   print('Max Rural Density: ' + m);
   PARAM.MaxRuralDensity = m;
-}
+};
 exports.setMinUrbanDensity = function(m){
   PARAM.MaxRuralDensity = m;
-}
+};
 
 exports.setUrbanAsset = function(m){
   PARAM.UrbanRuralAsset = m;
-}
+};
 exports.setRuralAsset = function(m){
   PARAM.UrbanRuralAsset = m;
-}
+};
+
+var getLastDateRange = function( Dataset ){
+  
+  var date_range = ee.List(Dataset.data.get('date_range'));
+  var l = Dataset.data.map( function(img){
+    return ee.Image(0)
+      .set('time_start', img.get('system:time_start'))
+      .set('time_end', img.get('system:time_end'))
+  });
+  var se = ee.List(l.aggregate_array('time_start'))
+    .cat(ee.List(l.aggregate_array('time_end'))).distinct().sort();
+  
+  var end = ee.Number(ee.Algorithms.If( se.length().gt(1),
+    se.get( se.length().subtract(1) ),
+    date_range.get(1)));
+  
+  var start = ee.Number(ee.Algorithms.If( se.length().gt(1),
+    se.get( se.length().subtract(2) ),
+    end.subtract(365*24*60*60*1000)));
+    
+  start = ee.Number( ee.Algorithms.If( start.eq(end),
+    start.subtract(365*24*60*60*1000),start));
+    
+  var startDate = ee.Date( start ).format('YYYY-MM-dd');
+  var endDate = ee.Date( end ).format('YYYY-MM-dd');
+  return ee.List([startDate, endDate]);
+};
+
 /*------------------------------------------------------------------------------
 *
 ------------------------------------------------------------------------------*/
 exports.getPop = function(DateStart, DateEnd, poly, year, CountryAbbr, useGlobalDataset, geeAssetPop){
   
   var zeroImg = ee.Image.constant(0);
-
+  var lastDate, date_range;
+  var pDateStart, pDateEnd;
   //-- GHSL 
+  date_range = getLastDateRange(POP.GHSL);
+  pDateStart = ee.String(ee.Algorithms.If(DateStart, DateStart, date_range.get(0) ));
+  pDateEnd = ee.String(ee.Algorithms.If(DateEnd, DateEnd, date_range.get(1) ));
   var ghslPop = POP.GHSL.data
     .filterBounds(poly)
-    .filter(ee.Filter.date( DateStart, DateEnd ));
+    .filter(ee.Filter.date( pDateStart, pDateEnd ));
   ghslPop = ee.Image(ee.Algorithms.If( ghslPop.size(),
       ghslPop.first().set('scale', POP.GHSL.scale), 
-      zeroImg.set('scale',10000) ))
+      zeroImg.set('scale',100000) ))
     .clip(poly)
     .set('database','GHSL','name','GHSL')
+    .set('DateStart',pDateStart,'DateEnd',pDateEnd)
     .rename('GHSL');//band name must match <database>       
 
   //-- WorldPop
+  date_range = getLastDateRange(POP.WORLDPOP);
+  pDateStart = ee.String(ee.Algorithms.If(DateStart, DateStart, date_range.get(0) ));
+  pDateEnd = ee.String(ee.Algorithms.If(DateEnd, DateEnd, date_range.get(1) ));
   var worldPop = POP.WORLDPOP.data
     .filterBounds(poly)
     .filter(ee.Filter.eq('country',CountryAbbr))
-    .filter(ee.Filter.eq('year',ee.Number.parse(year)))
-    .filter(ee.Filter.date( DateStart, DateEnd ))
+    //.filter(ee.Filter.eq('year',ee.Number.parse(year)))
+    .filter(ee.Filter.date( pDateStart, pDateEnd ))
     .filter(ee.Filter.eq('UNadj','no'));
   worldPop = ee.Image(ee.Algorithms.If( worldPop.size(),
       worldPop.first().set('scale', POP.WORLDPOP.scale), 
-      zeroImg.set('scale',10000) ))
+      zeroImg.set('scale',100000) ))
     .clip(poly)
     .set('database','worldPop','name','World Pop')
+    .set('DateStart',pDateStart,'DateEnd',pDateEnd)
     .rename('worldPop');//band name must match <database>       
     
   //-- GPW
+  date_range = getLastDateRange(POP.GPW);
+  pDateStart = ee.String(ee.Algorithms.If(DateStart, DateStart, date_range.get(0) ));
+  pDateEnd = ee.String(ee.Algorithms.If(DateEnd, DateEnd, date_range.get(1) ));
   var gpwPop = POP.GPW.data
-    .filter(ee.Filter.date( DateStart, DateEnd ))
+    .filter(ee.Filter.date( pDateStart, pDateEnd ))
     .filterBounds(poly);
   gpwPop = ee.Image(ee.Algorithms.If( gpwPop.size(),
       gpwPop.first().set('scale', POP.GPW.scale), 
-      zeroImg.set('scale',10000) ))
+      zeroImg.set('scale',100000) ))
     .clip(poly)
     .set('database','gpw','name','GPW')
+    .set('DateStart',pDateStart,'DateEnd',pDateEnd)
     .rename('gpw');//band name must match <database>       
     
   //-- Facebook Pop / HRSL
-   var HRSL_Pop = POP.HRSL.data
+  date_range = getLastDateRange(POP.HRSL);
+  pDateStart = ee.String(ee.Algorithms.If(DateStart, DateStart, date_range.get(0) ));
+  pDateEnd = ee.String(ee.Algorithms.If(DateEnd, DateEnd, date_range.get(1) ));
+  var HRSL_Pop = POP.HRSL.data
     .filterBounds(poly)
-    .filter(ee.Filter.date( DateStart, DateEnd ));
+    .filter(ee.Filter.date( pDateStart, pDateEnd ));
   HRSL_Pop = ee.Image(ee.Algorithms.If( HRSL_Pop.size(),
       HRSL_Pop.first().set('scale', POP.HRSL.scale), 
-      zeroImg.set('scale',10000) ))
-    //.multiply(ee.Image.pixelArea())
+      zeroImg.set('scale',100000) ))
     .clip(poly)
+    .selfMask()
     .set('database','hrsl','name','HRSL')
+    .set('DateStart',pDateStart,'DateEnd',pDateEnd)
     .rename('hrsl');//band name must match <database>        
 
   /*--------------------------------------------------------
@@ -135,7 +183,7 @@ exports.getPop = function(DateStart, DateEnd, poly, year, CountryAbbr, useGlobal
     [geeAssetPop]));
   
   return PopMap;
-}
+};
 
 /******************************************************************************
  * Calculate Rural Mask
