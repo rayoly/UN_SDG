@@ -158,10 +158,16 @@ exports.setRuralAsset = function(a){
 *****************************************************************************************/
 exports.selectedGEEAsset = function(){
   return (gui.population_GEEasset.getValue()===true && exports.PopAsset.length>0);
-}
+};
 /****************************************************************************************
 * 
 *****************************************************************************************/
 exports.selectedGlobalDataset = function(){
   return (gui.population_gbl_data.getValue()===true);
-}
+};
+/****************************************************************************************
+* 
+*****************************************************************************************/
+exports.getPopScale = function(){
+  return Number(gui.pop_reso_textbox.getValue());
+};

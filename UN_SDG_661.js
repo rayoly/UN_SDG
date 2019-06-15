@@ -23,7 +23,6 @@ SOFTWARE.
 */
 var CONFIG = require('users/rayoly/SDG_APP:config.js');
 var AVG = require('users/rayoly/SDG_APP:fnc/Average_fnc.js');
-var AOI = require('users/rayoly/SDG_APP:fnc/AOI.js');
 var GUI_AOI = require('users/rayoly/SDG_APP:fnc/GUI_AOI.js');
 var GUI_DATE = require('users/rayoly/SDG_APP:fnc/GUI_date.js');
 var EXPORT_MAP = require('users/rayoly/SDG_APP:fnc/exportMap.js');
@@ -185,8 +184,8 @@ var DisplayWaterLayer = function(){
   }
   
   //clip region
-  var poly = AOI.GetClippingPolygon(GUI_AOI.countryName, GUI_AOI.regionName, 
-    GUI_AOI.AssetName, GUI_AOI.RegionID, GUI_AOI.selectedGEEAsset());  
+  var poly = GUI_AOI.GetClippingPolygon(GUI_AOI.countryName, GUI_AOI.regionName, 
+    GUI_AOI.AssetName, GUI_AOI.RegionID);  
 
   //Generate water layer(s) based on Global surface water dataset or S2 data
   var ImgWaterRegion;
@@ -219,7 +218,7 @@ var DisplayWaterLayer = function(){
   if(app.defaultDB=='GSW'){
     area_permanent = ee.Number(waterCount(ImgWaterRegion.select(app.defaultLayer.band), GUI_AOI.Location.polygon, app.defaultLayer.AreaScale, 3)).divide(1e6);
     area_seasonal = ee.Number(waterCount(ImgWaterRegion.select(app.defaultLayer.band), GUI_AOI.Location.polygon, app.defaultLayer.AreaScale, 2)).divide(1e6);
-    var AOI_area = ee.Number(AOI.AOIarea(poly.polygon, app.defaultLayer.AreaScale)).divide(1e6);
+    var AOI_area = ee.Number(GUI_AOI.AOIarea(poly.polygon, app.defaultLayer.AreaScale)).divide(1e6);
     //
     infotxt = ee.String('Extent of water during ' + app.defaultYear +  '/' + app.defaultMonth + ' [' + app.defaultDB + ']:\n'
           + '*Permanent=')
@@ -320,8 +319,7 @@ var CalcWaterArea = function(){
     var result = ee.List([]);
     //Generate list of polygons
     regionRange.forEach( function(region){
-      var p = AOI.GetClippingPolygon(GUI_AOI.countryName, region,
-        GUI_AOI.AssetName, GUI_AOI.RegionID, GUI_AOI.selectedGEEAsset());
+      var p = GUI_AOI.GetClippingPolygon(GUI_AOI.countryName, region, GUI_AOI.AssetName, GUI_AOI.RegionID);
       var v = ee.Dictionary({region: ee.String(region), poly:ee.Geometry(p.polygon), outline:ee.Geometry(p.outline)});
       PolygonLst = PolygonLst.add( v );
     });
@@ -643,8 +641,8 @@ var exportMap = function(){
   HELP.show_help_panel('Generating Export Task for '+ GUI_AOI.countryName + ' in ' + app.defaultYear + '.' + app.defaultMonth);
 
   var description = 'Water_map_for_' + app.RegionID + '_' + app.defaultYear + '-' + app.defaultMonth;
-  var poly = AOI.GetClippingPolygon(GUI_AOI.countryName, GUI_AOI.regionName, 
-    GUI_AOI.AssetName, GUI_AOI.RegionID, GUI_AOI.selectedGEEAsset());
+  var poly = GUI_AOI.GetClippingPolygon(GUI_AOI.countryName, GUI_AOI.regionName, 
+    GUI_AOI.AssetName, GUI_AOI.RegionID);
   
   EXPORT_MAP.exportMap(mapPanel, description, app.defaultLayer.AreaScale, poly.polygon, app.EXPORT_CRS);
 };
@@ -668,14 +666,17 @@ ui.root.setLayout(ui.Panel.Layout.flow('horizontal'));
 var header = ui.Label('SDG 6.6.1: Water Change', GUIPREF.TITLE_STYLE);
 var subheader = ui.Label('Sub-Indicator 1', GUIPREF.SUBTITLE_STYLE);
 var toolPanel = ui.Panel([header, subheader], 'flow', GUIPREF.PANEL_STYLE);
-
+toolPanel.style().set('position','top-left');
 /*****************************************************************************************
 * GUI: Create a map panel.
 *****************************************************************************************/
-var mapPanel = ui.Map();
+//var mapPanel = ui.Map();
+var mapPanel = Map.add(toolPanel);
+//mapPanel.setOptions('HYBRID');
+
 mapPanel.add(HELP.help_panel);
 // Take all tools off the map except the zoom and mapTypeControl tools.
-mapPanel.setControlVisibility({all: true, zoomControl: true, mapTypeControl: true});
+mapPanel.setControlVisibility({all: true, zoomControl: false, mapTypeControl: true});
 
 /****************************************************************************************
 * GUI: Create a plotting/results panel.
@@ -689,7 +690,7 @@ var resultPanel = ui.Panel([
 * Define the pulldown menu.  Changing the pulldown menu changes the displayed year
 *****************************************************************************************/
 //Define year, month lists
-GUI_DATE.YearList = Array.apply(null, {length: 39}).map( function(number, index){return (1981+index).toString()});
+GUI_DATE.YearList = Array.apply(null, {length: 39}).map( function(number, index){return (1984+index).toString()});
 GUI_DATE.MonthList = app.availableMonths;
 //Create GUI
 GUI_DATE.createGUI(mapPanel, HELP, GUIPREF, true, true, false);
@@ -753,7 +754,7 @@ var DBPanel = ui.Panel([ui.Label('Dataset:', GUIPREF.LABEL_T_STYLE),   DBSelect,
 /******************************************************************************************
 * GUI: Selection of a predefined shape.
 ******************************************************************************************/
-GUI_AOI.createGUI(mapPanel, HELP, AOI, GUIPREF, app.defaultCountry,app.defaultRegion);
+GUI_AOI.createGUI(mapPanel, HELP, GUIPREF, app.defaultCountry,app.defaultRegion);
 var LocationPanel = GUI_AOI.LocationPanel;
 mapPanel.centerObject(ee.Geometry(GUI_AOI.Location.polygon));
 
@@ -761,6 +762,7 @@ mapPanel.centerObject(ee.Geometry(GUI_AOI.Location.polygon));
 * GUI: Create the legend.
 ******************************************************************************************/
 // Define a panel for the legend and give it a tile.
+GUIPREF.LEGEND_STYLE.position = 'top-right';
 LEGEND.createLegend(mapPanel, GUIPREF);
 
 /******************************************************************************************
@@ -876,4 +878,4 @@ toolPanel.add(ui.Panel([DBPanel, GUI_DATE.datePanel, LocationPanel,
 //map panel
 mapPanel.add(resultPanel);
 //overall window
-ui.root.widgets().reset([toolPanel, mapPanel]); 
+//ui.root.widgets().reset([toolPanel, mapPanel]); 

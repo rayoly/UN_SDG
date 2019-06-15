@@ -23,7 +23,6 @@ SOFTWARE.
 */
 var CONFIG = require('users/rayoly/SDG_APP:config.js');
 var AVG = require('users/rayoly/SDG_APP:fnc/Average_fnc.js');
-var AOI = require('users/rayoly/SDG_APP:fnc/AOI.js');
 var EXPORT_MAP = require('users/rayoly/SDG_APP:fnc/exportMap.js');
 var GUIPREF = require('users/rayoly/SDG_APP:fnc/GUI_Prefs.js');
 var LEGEND = require('users/rayoly/SDG_APP:fnc/Legend.js');
@@ -86,7 +85,7 @@ app.layerProperties = {
 /****************************************************************************************
 * Internal variables and config
 *****************************************************************************************/
-app.defaultLocation = AOI.CountryLoc[app.defaultCountry];
+app.defaultLocation = GUI_AOI.CountryLoc[app.defaultCountry];
 
 /*=======================================================================================
                                            FUNCTIONS
@@ -94,7 +93,7 @@ app.defaultLocation = AOI.CountryLoc[app.defaultCountry];
 /****************************************************************************************
 * Clear map panel
 *****************************************************************************************/
-function ClearMap(array){
+var ClearMap = function(array){
   while(mapPanel.layers().length()>0){
     mapPanel.remove(mapPanel.layers().get(0));
   }
@@ -107,7 +106,7 @@ var ClearresultPanel = function(){
     resultPanel.remove(resultPanel.widgets().get(0));
   }
   resultPanel.style().set('shown',false);
-}
+};
 
 /******************************************************************************
  * 
@@ -139,8 +138,7 @@ var CalcRAI = function(Year, CountryAbbr, lRegion, isTrend){
   var result = ee.List([]);
   //Generate list of polygons
   regionRange.forEach( function(region){
-    var p = AOI.GetClippingPolygon(GUI_AOI.countryName, region, GUI_AOI.AssetName, 
-      GUI_AOI.RegionID, GUI_AOI.selectedGEEAsset());
+    var p = GUI_AOI.GetClippingPolygon(GUI_AOI.countryName, region, GUI_AOI.AssetName, GUI_AOI.RegionID);
     var v = ee.Dictionary({region: ee.String(region), poly:ee.Geometry(p.polygon), outline:ee.Geometry(p.outline)});
     PolygonLst = PolygonLst.add( v );
   });
@@ -149,7 +147,7 @@ var CalcRAI = function(Year, CountryAbbr, lRegion, isTrend){
   var geeAssetPop;
   if(GUI_POP.selectedGEEAsset()){
     useGlobalDataset = 0;
-    var scale = Number(pop_reso_textbox.getValue()); 
+    var scale = GUI_POP.getPopScale();
     print('Imported Population dataset will be used. Scale=' + scale);
     //-- loaded Asset
     geeAssetPop = ee.Image(GUI_POP.PopAsset)
@@ -337,7 +335,7 @@ var DisplayPopLayer = function(){
   ClearresultPanel();
   LEGEND.setLegend(app.layerProperties, GUIPREF);
   //-----------------------------------------------------------------------------------
-  var countryAbbr = AOI.countryCode(GUI_AOI.countryName);
+  var countryAbbr = GUI_AOI.countryCode(GUI_AOI.countryName);
   
   var alldata = CalcRAI([app.defaultYear], countryAbbr, [GUI_AOI.regionName], false);
   if( Object.keys(alldata).length===0 ){return;}
@@ -495,7 +493,7 @@ var plotTrend = function(){
   var dataTable, summaryTable;
   var i;
   var RAI, total_stats, rural_stats, listYear;
-  var alldata = CalcRAI(app.availableYears, AOI.countryCode(GUI_AOI.countryName), 
+  var alldata = CalcRAI(app.availableYears, GUI_AOI.countryCode(GUI_AOI.countryName), 
     GUI_AOI.RegionLst.slice(1), true);//skip the first "region" which is "all"
   if( Object.keys(alldata).length===0 ){return;}
   //AOI: Outline
@@ -645,8 +643,8 @@ var plotTrend = function(){
 *****************************************************************************************/
 var exportMap = function(){
   var description = 'RAI_map_for_' + GUI_AOI.RegionID + '_' + app.defaultYear;
-  var poly = AOI.GetClippingPolygon(GUI_AOI.countryName, GUI_AOI.regionName, 
-    GUI_AOI.AssetName, GUI_AOI.RegionID, GUI_AOI.selectedGEEAsset());
+  var poly = GUI_AOI.GetClippingPolygon(GUI_AOI.countryName, GUI_AOI.regionName, 
+    GUI_AOI.AssetName, GUI_AOI.RegionID);
   
   EXPORT_MAP.exportMap(mapPanel, description, app.AreaScale, poly.polygon, app.EXPORT_CRS)
 };
@@ -667,18 +665,21 @@ HELP.createHelpBox('This App can be used to evaluate the access to roads and eva
 var header = ui.Label('SDG 9.1.1: Rural Access Index', GUIPREF.TITLE_STYLE);
 var subheader = ui.Label('', GUIPREF.SUBTITLE_STYLE);
 var toolPanel = ui.Panel([header, subheader], 'flow', GUIPREF.PANEL_STYLE);
-
+toolPanel.style().set('position','top-left');
 /****************************************************************************************
 * Create a map panel.
 *****************************************************************************************/
 var mapPanel = ui.Map();
+//var mapPanel = Map.add(toolPanel);
+//mapPanel.setOptions('HYBRID');
 mapPanel.add(HELP.help_panel);
 // Take all tools off the map except the zoom and mapTypeControl tools.
-mapPanel.setControlVisibility({all: true, zoomControl: true, mapTypeControl: true});
+mapPanel.setControlVisibility({all: true, zoomControl: false, mapTypeControl: true});
 /******************************************************************************************
 * GUI: Create the legend.
 ******************************************************************************************/
 // Define a panel for the legend and give it a tile.
+GUIPREF.LEGEND_STYLE.position = 'top-right';
 LEGEND.createLegend(mapPanel, GUIPREF);
 /*---------------------------------------------------------------------------------
 * Create a Result panel.
@@ -705,7 +706,7 @@ GUI_DATE.yearSelect.setValue(app.defaultYear);
 /******************************************************************************************
 * GUI: Selection of a predefined shape.
 ******************************************************************************************/
-GUI_AOI.createGUI(mapPanel, HELP, AOI, GUIPREF, app.defaultCountry, app.defaultRegion, true);
+GUI_AOI.createGUI(mapPanel, HELP, GUIPREF, app.defaultCountry, app.defaultRegion, true);
 var LocationPanel = GUI_AOI.LocationPanel;
 mapPanel.centerObject(ee.Geometry(GUI_AOI.Location.polygon));
 GUI_AOI.setAsset(app.defaultAssetName,  app.defaultRegionID);
@@ -757,13 +758,12 @@ var ck_layeropacity = ui.Checkbox({
   value: true,
   style: GUIPREF.CKBOX_STYLE,
   onChange: function(value) {
-    var selected = layerSelect.getValue();
     // Loop through the layers in the mapPanel. For each layer,
     // if the layer's name is the same as the name selected in the layer
     // pulldown, set the visibility of the layer equal to the value of the
     // checkbox. Otherwise, set the visibility to false.
     mapPanel.layers().forEach(function(element, index) {
-      element.setShown(selected == element.getName() ? value : false);
+      element.setShown(value);
     });
     // If the checkbox is on, the layer pulldown should be enabled, otherwise,
     // it's disabled.
