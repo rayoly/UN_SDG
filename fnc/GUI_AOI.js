@@ -75,7 +75,9 @@ for (var key in exports.CountryLoc) {
     exports.CountryLoc[key].lat = cent.coordinates().get(1);
   }
 }
-
+/**************************************************************************************
+* 
+**************************************************************************************/
 exports.RegionsList = function(country)
 {
   var ADM1Lst = exports.GAUL1.filter(ee.Filter.eq('ADM0_NAME',country));
@@ -84,7 +86,9 @@ exports.RegionsList = function(country)
   return RegionLst;
 }
 
-
+/**************************************************************************************
+* 
+**************************************************************************************/
 exports.RegionPolygon = function(country, region)
 {
   var SelRegionPolygon = exports.GAUL1
@@ -213,8 +217,9 @@ var createPolygon = function(coords){
     gui.mapPanel.remove(gui.PolygonLayer);  
   }
   if(gui.POINT_LST.length>=3){
-    gui.PolygonLayer = ui.Map.Layer(ee.Geometry.Polygon(gui.POINT_LST), {color: '000000'}, 'drawn polygon');
+    gui.PolygonLayer = ui.Map.Layer(ee.Geometry.LinearRing(gui.POINT_LST), {color: '000000'}, 'drawn polygon');
     gui.mapPanel.add(gui.PolygonLayer);
+    gui.mapPanel.centerObject(ee.Geometry.Polygon(gui.POINT_LST));    
   }
 };
 /****************************************************************************************
@@ -222,6 +227,7 @@ var createPolygon = function(coords){
 *****************************************************************************************/
 exports.createGUI = function(mapPanel, HELP,  GUIPREF, country, region, useRoad){
   gui.mapPanel = mapPanel;
+  gui.mapPanel.style().set('cursor', 'hand');
   //default values
   exports.Location = exports.CountryLoc[country];
   exports.RegionLst = exports.RegionsList(country); 
@@ -258,11 +264,8 @@ exports.createGUI = function(mapPanel, HELP,  GUIPREF, country, region, useRoad)
       gui.active_gee_asset.setValue(false);
       gui.current_Polygon.setValue(false);
       //Get administrative regions
-      if(typeof AOI !== 'undefined'){
-        exports.RegionLst = AOI.RegionsList(country);
-      }else{
-        exports.RegionLst = exports.RegionList(country);
-      }
+      exports.RegionLst = exports.RegionsList(country);
+      
       gui.regionSelect = ui.Select({
         items: exports.RegionLst,
         value: exports.RegionLst[0],
@@ -271,7 +274,7 @@ exports.createGUI = function(mapPanel, HELP,  GUIPREF, country, region, useRoad)
           exports.regionName = value;
           //
           if(useRoad){
-            retrieve_road_network(AOI, exports.countryName , exports.regionName, exports.AssetName, exports.RegionID);
+            retrieve_road_network(exports.countryName , exports.regionName, exports.AssetName, exports.RegionID);
           }
           gui.active_preshape.setValue(true);
           gui.active_gee_asset.setValue(false);
@@ -294,7 +297,7 @@ exports.createGUI = function(mapPanel, HELP,  GUIPREF, country, region, useRoad)
       exports.regionName = value;
       //
       if(useRoad){
-        retrieve_road_network(AOI, exports.countryName , exports.regionName, exports.AssetName, exports.RegionID);
+        retrieve_road_network(exports.countryName , exports.regionName, exports.AssetName, exports.RegionID);
       }
       //
       gui.active_preshape.setValue(true);
@@ -421,7 +424,7 @@ exports.createGUI = function(mapPanel, HELP,  GUIPREF, country, region, useRoad)
     
   //
   if(useRoad){
-    retrieve_road_network(gui.mapPanel, exports.countryName ,exports.regionName, exports.AssetName, exports.RegionID);
+    retrieve_road_network(exports.countryName ,exports.regionName, exports.AssetName, exports.RegionID);
   }
 };
 /****************************************************************************************
