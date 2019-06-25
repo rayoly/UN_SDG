@@ -674,12 +674,12 @@ var mapPanel = ui.Map();
 //mapPanel.setOptions('HYBRID');
 mapPanel.add(HELP.help_panel);
 // Take all tools off the map except the zoom and mapTypeControl tools.
-mapPanel.setControlVisibility({all: true, zoomControl: false, mapTypeControl: true});
+mapPanel.setControlVisibility({all: false, layerList:true, zoomControl: false, mapTypeControl: true});
 /******************************************************************************************
 * GUI: Create the legend.
 ******************************************************************************************/
 // Define a panel for the legend and give it a tile.
-GUIPREF.LEGEND_STYLE.position = 'top-right';
+//GUIPREF.LEGEND_STYLE.position = 'top-right';
 LEGEND.createLegend(mapPanel, GUIPREF);
 /*---------------------------------------------------------------------------------
 * Create a Result panel.
