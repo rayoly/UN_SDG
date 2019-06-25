@@ -126,3 +126,10 @@ exports.DateRange = function(year, month){
   return ee.List([DateStart, DateEnd]);
   
 }
+
+exports.setYear = function(year){
+  exports.yearSelect.setValue(year);
+}
+exports.setMonth = function(month){
+  exports.monthSelect.setValue(month);
+}
