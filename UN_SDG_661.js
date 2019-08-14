@@ -64,7 +64,7 @@ var layerProperties = {
       band: 'waterClass',
       min_data_value: 1,
       AreaScale: 30.0, //resolution
-      availableYears: Array.apply(null, {length: 32}).map( function(number, index){return (1984+index).toString()}),
+      availableYears: Array.apply(null, {length: 36}).map( function(number, index){return (1984+index).toString()}),
       trendSeries: ['Permanent', 'Seasonal','Permanent - Change','Seasonal - Change'],
       visParam: {min: 0, max: 3, palette: ['white', 'white', 'cyan', 'blue']},
       legend: {type:'discrete', style:[ {'Permanent (GSW)': 'blue'}, {'Seasonal (GSW)': 'cyan'} ]},
@@ -74,7 +74,7 @@ var layerProperties = {
       name: 'Month',
       band: 'water',
       min_data_value: 1,
-      availableYears: Array.apply(null, {length: 32}).map( function(number, index){return (1984+index).toString()}),
+      availableYears: Array.apply(null, {length: 36}).map( function(number, index){return (1984+index).toString()}),
       AreaScale: 30.0, //resolution
       trendSeries: ['Water'],
       visParam: {min: 0, max: 2, palette: ['white', 'blue']},
@@ -85,7 +85,7 @@ var layerProperties = {
       name: 'Water Coverage',
       band: 'waterClass',
       min_data_value: 1,
-      availableYears: Array.apply(null, {length: 32}).map( function(number, index){return (1984+index).toString()}),
+      availableYears: Array.apply(null, {length: 36}).map( function(number, index){return (1984+index).toString()}),
       AreaScale: 30.0, //resolution
       trendSeries: ['Water'],
       visParam: {bands: 'Permanent_water_coverage', min: 0, max: 1, palette: ['darkred',' red', 'orange', 'white', 'lightblue','blue', 'darkblue']},
