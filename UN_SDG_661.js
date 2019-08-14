@@ -51,7 +51,7 @@ app.availableDB = ['GSW','S2'];
 app.EXPORT_CRS = 'EPSG:4326';
 app.RegionID = 0;
 /***********************************************************************************/
-var NDWI_visParam = {min:-1, max:1, palette:['ffffff', 'ff0000', 'ffff00', '00ffff', '0000ff']};
+var NDWI_visParam = {bands:['NDWI'],min:-1, max:1, palette:['ffffff', 'ff0000', 'ffff00', '00ffff', '0000ff']};
 var TimeSeriesParam = {
   name: 'Statistics',
   visParam: {bands: ['water_change'], min:-1, max:1, palette:['ff0000','000000','0000ff']},
@@ -110,7 +110,6 @@ var layerProperties = {
       band: 'water',
       min_data_value: 0,
       availableYears: Array.apply(null, {length: 4}).map( function(number, index){return (2015+index).toString()}),
-      WATER_DATASET_name: 'COPERNICUS/S2', //dataset, L1C: 'COPERNICUS/S2' from 2015, L2A: 'COPERNICUS/S2_SR' from 2017
       AreaScale: 20.0, //resolution
       trendSeries: ['Water'],
       visParam: {min: 0, max: 3, palette: ['white', 'blue']},
@@ -122,7 +121,6 @@ var layerProperties = {
       band: 'water',
       min_data_value: 0,
       availableYears: Array.apply(null, {length: 4}).map( function(number, index){return (2015+index).toString()}),
-      WATER_DATASET_name: 'COPERNICUS/S2', //dataset, L1C: 'COPERNICUS/S2' from 2015, L2A: 'COPERNICUS/S2_SR' from 2017
       AreaScale: 20.0, //resolution
       trendSeries: ['Water'],
       visParam: {bands: 'Total_water_coverage', min: 0, max: 1, palette: ['darkred',' red', 'orange', 'white', 'lightblue','blue', 'darkblue']},
@@ -214,27 +212,33 @@ var DisplayWaterLayer = function(){
   //Calculate water extent
   var area_seasonal = ee.Number(0);
   var area_permanent = ee.Number(0);
+  var AOI_area = ee.Number(GUI_AOI.AOIarea(poly.polygon, app.defaultLayer.AreaScale)).divide(1e6);
   var waterInfo, infotxt;
   if(app.defaultDB=='GSW'){
     area_permanent = ee.Number(waterCount(ImgWaterRegion.select(app.defaultLayer.band), GUI_AOI.Location.polygon, app.defaultLayer.AreaScale, 3)).divide(1e6);
     area_seasonal = ee.Number(waterCount(ImgWaterRegion.select(app.defaultLayer.band), GUI_AOI.Location.polygon, app.defaultLayer.AreaScale, 2)).divide(1e6);
-    var AOI_area = ee.Number(GUI_AOI.AOIarea(poly.polygon, app.defaultLayer.AreaScale)).divide(1e6);
     //
     infotxt = ee.String('Extent of water during ' + app.defaultYear +  '/' + app.defaultMonth + ' [' + app.defaultDB + ']:\n'
           + '*Permanent=')
           .cat(area_permanent.format('%.2f km2 (')).cat(area_permanent.divide(AOI_area).multiply(100).format('%.2f')).cat('% of AOI)\n*Seasonal=')
           .cat(area_seasonal.format('%.2f km2 (')).cat(area_seasonal.divide(AOI_area).multiply(100).format('%.2f')).cat('% of AOI)');
   }else{
-    mapPanel.add(ui.Map.Layer(ImgWaterRegion.select('NDWI'),NDWI_visParam,'NDWI',false));
+    mapPanel.add(ui.Map.Layer(ImgWaterRegion,NDWI_visParam,'NDWI',false));
     area_permanent = ee.Number(waterCount(ImgWaterRegion.select(app.defaultLayer.band), GUI_AOI.Location.polygon, app.defaultLayer.AreaScale, 3)).divide(1e6);
-
     infotxt = ee.String('Extent of water during ' + app.defaultYear +  '/' + app.defaultMonth + ' [' + app.defaultDB + ']:\n'
           + '*Permanent=')
           .cat(area_permanent.format('%.2f km2 or (')).cat(area_permanent.divide(AOI_area).format('%.2f')).cat('% of AOI)');
   }
   //
-  infotxt.evaluate(function(result) {
-    resultPanel.widgets().set(1, ui.Label(result, {fontWeight: 'bold', color: GUIPREF.TEXTCOLOR, whiteSpace:'pre'}) );
+  resultPanel.widgets().set(1, ui.Label('Computing...'));
+  infotxt.evaluate(function(result, fail) {
+    if(typeof fail !== 'undefined'){
+      HELP.show_help_panel('Error during the calculation:' + fail);
+      resultPanel.style().set('shown',false);      
+    }else{
+      resultPanel.clear();
+      resultPanel.widgets().set(1, ui.Label(result, {fontWeight: 'bold', color: GUIPREF.TEXTCOLOR, whiteSpace:'pre'}) );
+    }
   });
   //Results Panel
   //resultPanel.widgets().set(1, waterInfo);
@@ -248,7 +252,6 @@ var DisplayWaterLayer = function(){
 * Extract water area
 *****************************************************************************************/
 var waterCount = function(image, geometry, AreaScale, WATER_TYPE){
-
   var waterArea = ee.Image(image)
                     .eq(WATER_TYPE)
                     .multiply(ee.Image.pixelArea())
@@ -289,7 +292,7 @@ var CalcWaterArea = function(){
       //Years and months to consider
       yearRange = app.defaultLayer.availableYears;
       monthRange = ['All'];
-      regionRange = [app.defaultRegion];
+      regionRange = [GUI_AOI.regionName];
     }else if(app.rangeType=='Monthly'){
       //HELP.show_help_panel('Monthly trend for the year ' + app.defaultYear);
       //define layer to use
@@ -502,8 +505,8 @@ var plotTrend = function(){
           title = 'Water Area Over Time over ' + GUI_AOI.AssetName + '.' + GUI_AOI.RegionID + 
               ' during '+ app.defaultYear + '/' + app.defaultMonth;
         }
-    
-        var waterChart = ui.Chart.array.values(areas, 1, data.date)
+        var dates = data.map(function(f){return f.date});
+        var waterChart = ui.Chart.array.values(areas, 1, dates)
           .setChartType('LineChart')
           .setSeriesNames(app.defaultLayer.trendSeries)
           .setOptions({
@@ -670,13 +673,13 @@ toolPanel.style().set('position','top-left');
 /*****************************************************************************************
 * GUI: Create a map panel.
 *****************************************************************************************/
-//var mapPanel = ui.Map();
-var mapPanel = Map.add(toolPanel);
+var mapPanel = ui.Map();
+//var mapPanel = Map.add(toolPanel);
 //mapPanel.setOptions('HYBRID');
 
 mapPanel.add(HELP.help_panel);
 // Take all tools off the map except the zoom and mapTypeControl tools.
-mapPanel.setControlVisibility({all: true, zoomControl: false, mapTypeControl: true});
+mapPanel.setControlVisibility({all: false, layerList:true, zoomControl: false, mapTypeControl: true});
 
 /****************************************************************************************
 * GUI: Create a plotting/results panel.
@@ -762,7 +765,7 @@ mapPanel.centerObject(ee.Geometry(GUI_AOI.Location.polygon));
 * GUI: Create the legend.
 ******************************************************************************************/
 // Define a panel for the legend and give it a tile.
-GUIPREF.LEGEND_STYLE.position = 'top-right';
+//GUIPREF.LEGEND_STYLE.position = 'top-right';
 LEGEND.createLegend(mapPanel, GUIPREF);
 
 /******************************************************************************************
@@ -858,7 +861,7 @@ var gsw_info = ui.Label(
     'GSW dataset: J.-F. Pekel, A. Cottam, N. Gorelick, A. S. Belward, "High-resolution mapping of global surface water and its long-term changes." Nature 540, 418-422 (2016).', 
     {backgroundColor: GUIPREF.BACKCOLOR},
     'https://www.nature.com/articles/nature20584');
-var sentinel_info = ui.Label('Copernicus/Sentinel-2 data available from Jun 23, 2015 - ',
+var sentinel_info = ui.Label('Copernicus/Sentinel-2 L2A data available from Mar 28, 2017 - ',
     {backgroundColor: GUIPREF.BACKCOLOR},
     'http://');
 var referencePanel = ui.Panel([ui.Label('For more information:', GUIPREF.LABEL_T_STYLE), gsw_info, sentinel_info],
@@ -878,4 +881,4 @@ toolPanel.add(ui.Panel([DBPanel, GUI_DATE.datePanel, LocationPanel,
 //map panel
 mapPanel.add(resultPanel);
 //overall window
-//ui.root.widgets().reset([toolPanel, mapPanel]); 
+ui.root.widgets().reset([toolPanel, mapPanel]); 

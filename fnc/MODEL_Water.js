@@ -22,10 +22,17 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 */
 
-var datasets = {
+var GUI_DATE = require('users/rayoly/SDG_APP:fnc/GUI_date.js');
+
+/*var datasets = {
   GSW_yearly: {data:'JRC/GSW1_0/YearlyHistory', min_data_value: 1, band:'waterClass'},//dataset
   GSW_monthly:{data:'JRC/GSW1_0/MonthlyHistory', min_data_value: 1, band:'water'}, //dataset
-  S2:{data:'COPERNICUS/S2', min_data_value: 0, band:'water'}
+  S2:{data:'COPERNICUS/S2_SR', min_data_value: 0, band:'water'}
+}*/
+var datasets = {
+  GSW_yearly: {data:'JRC/GSW1_1/YearlyHistory', min_data_value: 1, band:'waterClass'},//dataset
+  GSW_monthly:{data:'JRC/GSW1_1/MonthlyHistory', min_data_value: 1, band:'water'}, //dataset
+  S2:{data:'COPERNICUS/S2_SR', min_data_value: 0, band:'water'}
 }
 var NDWI_threshold = 0.3;
 
@@ -78,6 +85,7 @@ exports.GSW = function(poly, month, year){
 };
 /*---------------------------------------------------------------------------------------
 * Display water layer from Sentinel-2 NDWI
+* ref: https://github.com/sentinel-hub/custom-scripts/blob/master/sentinel-2/ndwi/script.js
 ---------------------------------------------------------------------------------------*/
 function maskS2clouds(image) {
   var qa = image.select('QA60');
@@ -93,42 +101,36 @@ function maskS2clouds(image) {
   return image.updateMask(mask).divide(10000);
 }
 exports.S2 = function(poly, S2_DWI_type, month, year){
-  var DateStart, DateEnd;
-  year = ee.String(year);
+  var DateRange = GUI_DATE.DateRange(year, month);
+  var DateStart = DateRange.get(0);
+  var DateEnd = DateRange.get(1);
   month = ee.String(month);
   month = ee.Number(ee.Algorithms.If(month.compareTo('All').eq(0),0,ee.Number.parse(month)));
-  //Calculate NDWI from Sentinel-2
-   //filter data by date
-  DateStart = ee.Algorithms.If(month.eq(0),
-    year.cat('-01-01'),
-    year.cat('-').cat(ee.String(month)).cat('-01')
-  );
-  DateEnd = ee.Algorithms.If(month.eq(0),
-    year.cat('-12-31'),
-    year.cat('-').cat(ee.String(month)).cat('-31')
-  );
+
+  var zeroImg = ee.Image.constant(0);
 
   // Create an initial mosiac, which we'll visualize in a few different ways.
   var dataset = ee.ImageCollection(datasets.S2.data)
       .filterDate(DateStart, DateEnd)
+      .filterBounds(poly)
       .filter(ee.Filter.lt('CLOUDY_PIXEL_PERCENTAGE', 20));        // Pre-filter to get less cloudy granules.
 
   var image = ee.Image(ee.Algorithms.If(
       dataset.size().neq(0),
-      dataset.select(['B3','B8','B11','QA60'])
+      dataset//.select(['B3','B8','B11','QA60'])
       .map(maskS2clouds)
-      .median(),
-      ee.Image.constant(0).rename('B3').addBands(ee.Image.constant(0).rename('B8')).addBands(ee.Image.constant(0).rename('B11')  )
+      .mosaic(),//median()
+      zeroImg.rename('B3').addBands(zeroImg.rename('B8')).addBands(zeroImg.rename('B11')  )
       ))
   .set('year',ee.Number.parse(year))
   .set('month',ee.Number.parse(month))
   .clip(poly);
   
   //only interested in water bodies --> NDWI>(NDWI_threshold) 
-	//NDWI: (B3-B8)/(B3+B8) // (NIR-SWIR)/(NIR+SWIR) 
-	//NDWI: (B3-B11)/(B3+B11) // (Green-NIR)(Green + NIR) -- ref for water
-	var NDWI = image.clip(poly).normalizedDifference(['B3', 'B11']);
-  var ImgWaterRegion = NDWI.rename(['NDWI']);
+	var NDWI = image.normalizedDifference(['B3', 'B8']);//McFeeters: (green-nir)/(green+nir) 
+	//var NDWI = image.normalizedDifference(['B8', 'B11']);//GAO: (nir-swir)/(nir+swir) [-1,1]
+	
+  var ImgWaterRegion = image.addBands(NDWI.rename(['NDWI']));
   //water mask as for GSW
   ImgWaterRegion = ImgWaterRegion.addBands(
       NDWI.gte(NDWI_threshold)
