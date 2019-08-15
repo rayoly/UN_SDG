@@ -24,9 +24,16 @@ See also the list of contributors who participated in this project.
 ### License
 This project is licensed under the GNU License - see the LICENSE.md file for details
 
-### Acknowledgments
+### Datasets
 * GEE Dataset USDOS/LSIB/2013
-* GEE Dataset JRC/GSW1_0/YearlyHistory
+* WorldPop/POP
+* CIESIN/GPWv4/population-count
+* GEE Dataset JRC/GSW1_1/YearlyHistory
 * GAUL L1 dataset from 2008
 * OpenStreetMap
+* Sentinel 3 OLCI
+* Sentinel 2 MSI
+
+### References
+Mariathasan, V., Bezuidenhoudt, E. and Olympio, K.R., 2019. Evaluation of Earth Observation Solutions for Namibia’s SDG Monitoring System. Remote Sensing, 11(13), p.1612. https://doi.org/10.3390/rs11131612
 
