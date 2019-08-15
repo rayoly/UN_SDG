@@ -23,7 +23,6 @@ SOFTWARE.
 */
 var CONFIG = require('users/rayoly/SDG_APP:config.js');
 var AVG = require('users/rayoly/SDG_APP:fnc/Average_fnc.js');
-var AOI = require('users/rayoly/SDG_APP:fnc/AOI.js');
 var GUI_AOI = require('users/rayoly/SDG_APP:fnc/GUI_AOI.js');
 var GUI_DATE = require('users/rayoly/SDG_APP:fnc/GUI_date.js');
 var EXPORT_MAP = require('users/rayoly/SDG_APP:fnc/exportMap.js');
@@ -48,14 +47,17 @@ app.defaultRegion = 'All';
 app.defaultYear = '2016';
 app.defaultMonth = 'All';
 app.defaultAssetName = '';
-app.defaultDB = 'S3';
+app.defaultDB = 'S3_OLCI';
 app.rangeType = 'Yearly';
 app.waterAlgo = MODEL_WaterQual.Algorithms[1];
 app.defaultParam = 'Turbidity';
 //date list
-app.availableYears = ['2016','2017','2018','2019'];
+app.availableYears = ['2000','2001','2002','2003','2004','2005',
+  '2006','2007','2008','2009','2010',
+  '2011','2012','2013','2014','2015',
+  '2016','2017','2018','2019'];
 app.availableMonths = ['All','01','02','03','04','05','06','07','08','09','10','11','12'];
-var availableDB = ['S3','Landsat'];
+var availableDB = MODEL_WaterQual.Instruments;
 //CRS
 app.EXPORT_CRS = 'EPSG:4326';
 app.RegionID = 0;
@@ -63,7 +65,7 @@ app.RegionID = 0;
 
 app.layerProperties = {
     AreaScale: 300.0, //resolution
-    trendSeries: ['TSM', 'Chl-a','Turbidity'],
+    trendSeries: ['TSM', 'Chl-a','Turbidity','C_SPM'],
     visParam: {bands: 'Turbidity_mean', min: 0, max: 150, palette: ['001fff','2fa8ff','4affe6','9cffb6','e9ff93','fcff6b','ff9e66','ff524a','ff0000']},
     legend: {title: 'Mean Turbidity', type:'continuous'},
     defaultVisibility: true
@@ -79,7 +81,7 @@ var locationDict = {
 /****************************************************************************************
 * Internal variables and config
 *****************************************************************************************/
-app.defaultLocation = AOI.CountryLoc[app.defaultCountry];
+app.defaultLocation = GUI_AOI.CountryLoc[app.defaultCountry];
 
 /*=======================================================================================
                                            FUNCTIONS
@@ -131,8 +133,7 @@ var CalcWaterStats = function(Year, CountryAbbr, lMonth, lRegion, isTrend){
   }
   //Generate list of polygons
   regionRange.forEach( function(region){
-    var p = AOI.GetClippingPolygon(GUI_AOI.countryName, region, GUI_AOI.AssetName, 
-      GUI_AOI.RegionID, GUI_AOI.selectedGEEAsset());
+    var p = GUI_AOI.GetClippingPolygon(GUI_AOI.countryName, region, GUI_AOI.AssetName, GUI_AOI.RegionID);
     var v = ee.Dictionary({region: ee.String(region), poly:ee.Geometry(p.polygon), outline:ee.Geometry(p.outline)});
     PolygonLst = PolygonLst.add( v );
   });
@@ -176,7 +177,7 @@ var CalcWaterStats = function(Year, CountryAbbr, lMonth, lRegion, isTrend){
         var WaterQual = MODEL_WaterQual.getWaterQual(app.defaultDB, DateStart, DateEnd, poly, waterMask, app.waterAlgo);
         var waterParameters = ee.Image(WaterQual.first()).bandNames();
 
-        WaterQual = ee.Image(WaterQual.reduce(combi_reducer)).clip(poly);        
+        WaterQual = WaterQual.reduce(combi_reducer);
         //-------- Calculate max stats
         var bands = WaterQual.bandNames();
         /*var waterStats = bands.iterate( function(band, prev_dict){
@@ -243,20 +244,25 @@ var DisplayWaterLayer = function(){
   ClearresultPanel();
   
   //-----------------------------------------------------------------------------------
-  var countryAbbr = AOI.countryCode(GUI_AOI.countryName);
+  var countryAbbr = GUI_AOI.countryCode(GUI_AOI.countryName);
   var result = CalcWaterStats([app.defaultYear], countryAbbr, [app.defaultMonth],[GUI_AOI.regionName],false);
+  print(result)
   result = ee.Dictionary(result.get(0));
   /*------------------------------------------------------
   * Plots MAPS
   ------------------------------------------------------*/
   //Add region outline to map  
   mapPanel.add(ui.Map.Layer(ee.Geometry(result.get('Outline')), {}, 'Region'));
+  //Add water mask
+  mapPanel.addLayer( ee.Image(result.get('waterMask')), {palette:['ffffff','0000ff']}, 'Water Mask', false); 
+  
   var poly = result.get('BoundaryPolygon');
-  //Air quality
+  //Water quality
   var WaterQual = ee.Image(result.get('WaterQual'));
-  //
+  app.layerProperties.visParam.bands = [ WaterQual.bandNames().get(0).getInfo()];
   app.layerProperties = LEGEND.setLegend(app.layerProperties, GUIPREF, 
     WaterQual.select(app.layerProperties.visParam.bands).clip(poly));
+
   mapPanel.addLayer( WaterQual, app.layerProperties.visParam, 'Water Quality',true); 
   
   //-Results
@@ -312,7 +318,7 @@ var plotTrend = function(){
   //clear result Panel
   ClearresultPanel();
   
-  var result = CalcWaterStats(app.availableYears, AOI.countryCode(GUI_AOI.countryName), 
+  var result = CalcWaterStats(app.availableYears, GUI_AOI.countryCode(GUI_AOI.countryName), 
     app.availableMonths.slice(1,13), GUI_AOI.RegionLst, true);
 
   var areas;
@@ -431,7 +437,7 @@ var exportMap = function(){
   HELP.show_help_panel('Generating Export Task for '+ app.defaultCountry + ' in ' + app.defaultYear + '.' + app.defaultMonth);
 
   var description = 'Water_map_for_' + app.RegionID + '_' + app.defaultYear + '-' + app.defaultMonth;
-  var poly = AOI.GetClippingPolygon(GUI_AOI.countryName, GUI_AOI.regionName, GUI_AOI.AssetName, GUI_AOI.RegionID);  
+  var poly = GUI_AOI.GetClippingPolygon(GUI_AOI.countryName, GUI_AOI.regionName, GUI_AOI.AssetName, GUI_AOI.RegionID);  
   
   EXPORT_MAP.exportMap(mapPanel, description, app.layerProperties.AreaScale, poly.polygon, app.EXPORT_CRS);
 };
@@ -450,14 +456,18 @@ HELP.createHelpBox('This App can be used to evaluate the trend in water area and
 var header = ui.Label('SDG 6.3.2: Water Quality', GUIPREF.TITLE_STYLE);
 var subheader = ui.Label(' ', GUIPREF.SUBTITLE_STYLE);
 var toolPanel = ui.Panel([header, subheader], 'flow', GUIPREF.PANEL_STYLE);
-
+toolPanel.style().set('position','top-left')
 /*****************************************************************************************
 * GUI: Create a map panel.
 *****************************************************************************************/
-var mapPanel = ui.Map();
+//var mapPanel = ui.Map();
+var mapPanel = Map.add(toolPanel);
+//mapPanel.setOptions('HYBRID');
+mapPanel.setControlVisibility(false,true,false);
 mapPanel.add(HELP.help_panel);
+
 // Take all tools off the map except the zoom and mapTypeControl tools.
-//mapPanel.setControlVisibility({all: true, zoomControl: true, mapTypeControl: true});
+mapPanel.setControlVisibility({all: true, zoomControl: false, mapTypeControl: true});
 
 /****************************************************************************************
 * GUI: Create a plotting/results panel.
@@ -472,7 +482,7 @@ resultPanel.add(graphPanelTitle);
 * Define the pulldown menu.  Changing the pulldown menu changes the displayed year
 *****************************************************************************************/
 //Define year, month lists
-GUI_DATE.setYearList(['2016','2017','2018','2019']);
+GUI_DATE.setYearList(app.availableYears);
 GUI_DATE.setMonthList(app.availableMonths);
 //Create GUI
 GUI_DATE.createGUI(mapPanel, HELP, GUIPREF, true, true, false);
@@ -488,7 +498,7 @@ GUI_DATE.monthSelect.onChange(function(month) {
 * Define the pulldown menu.  Changing the pulldown menu changes the displayed location
 *****************************************************************************************/
 // Create the location pulldown.
-var locations = Object.keys(AOI.CountryLoc);
+var locations = Object.keys(GUI_AOI.CountryLoc);
 var index = locations.sort().indexOf(app.defaultCountry);
 
 
@@ -521,18 +531,18 @@ var AlgoSelect = ui.Select({
 var AlgoPanel = ui.Panel([algorithm_lbl, AlgoSelect], 
 	ui.Panel.Layout.Flow('horizontal'), GUIPREF.CNTRL_SUBSUBPANEL_STYLE);
 	
-var DBPanel = ui.Panel([ui.Label('Dataset:', GUIPREF.LABEL_T_STYLE),   
-  DBSelect,
+var DBPanel = ui.Panel([ui.Label('Instrument:', GUIPREF.LABEL_T_STYLE),   
+  DBSelect,  AlgoPanel,
   ui.Button('?',  function() {HELP.show_help_panel(['GSW: Global Surface Water v1.0. (1984-2015) \nS3: Level 1C Sentinel-2 data used to calculate NDWI. (2015-)'
   ])}, false, GUIPREF.HELP_BTN_STYLE),
-  AlgoPanel], 
+  ], 
   ui.Panel.Layout.flow('horizontal',true), GUIPREF.CNTRL_PANEL_STYLE);
 
 
 /******************************************************************************************
 * GUI: Selection of a predefined shape.
 ******************************************************************************************/
-GUI_AOI.createGUI(mapPanel, HELP, AOI, GUIPREF, app.defaultCountry,app.defaultRegion);
+GUI_AOI.createGUI(mapPanel, HELP, GUIPREF, app.defaultCountry,app.defaultRegion);
 var LocationPanel = GUI_AOI.LocationPanel;
 mapPanel.centerObject(ee.Geometry(GUI_AOI.Location.polygon));
 GUI_AOI.setAsset(app.defaultAssetName,  app.defaultRegionID);
@@ -549,6 +559,7 @@ GUI_MAP_INSPECTOR.setvAxisTitle('turbidity');
 * GUI: Create the legend.
 ******************************************************************************************/
 // Define a panel for the legend and give it a tile.
+GUIPREF.LEGEND_STYLE.position = 'top-right';
 LEGEND.createLegend(mapPanel, GUIPREF);
 
 /******************************************************************************************
@@ -656,4 +667,4 @@ toolPanel.add(ui.Panel([DBPanel,
 //map panel
 mapPanel.add(resultPanel);
 //overall window
-ui.root.widgets().reset([toolPanel, mapPanel]); 
+//ui.root.widgets().reset([toolPanel, mapPanel]); 
